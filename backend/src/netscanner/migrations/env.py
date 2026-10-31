@@ -13,9 +13,10 @@ from sqlalchemy import Connection
 
 from netscanner.core.config import load_settings_or_exit
 from netscanner.core.db import create_engine
+from netscanner.store.models import metadata
 
-# Metadata of the business tables; empty until add-data-provenance-model.
-target_metadata = None
+# Business tables; autogenerate and the schema test compare against them.
+target_metadata = metadata
 
 
 def _run(connection: Connection) -> None:

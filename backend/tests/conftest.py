@@ -11,19 +11,29 @@ unless ``NETSCANNER_TEST_REQUIRE_DB=1`` (set in CI), which makes them fail.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets
 import socket
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import asyncpg
 import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from netscanner.core.config import ENV_PREFIX, Settings
+from netscanner.core.db import create_engine, session_factory
+from netscanner.migrate import upgrade
+from netscanner.store.models import metadata
+from netscanner.store.service import Store
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -39,9 +49,9 @@ class Canaries:
         return [self.secret_key, self.db_password]
 
     def assert_absent(self, *texts: str) -> None:
-        for text in texts:
+        for output in texts:
             for canary in self.all():
-                assert canary not in text
+                assert canary not in output
 
 
 @pytest.fixture
@@ -151,3 +161,98 @@ def run_module(
         timeout=timeout,
         check=False,
     )
+
+
+# --- Databases for the persistence layer ------------------------------------
+
+
+async def _admin(db: TestDatabase, statement: str) -> None:
+    conn = await asyncpg.connect(
+        host=db.host, port=db.port, user=db.user, password=db.password, database=db.name
+    )
+    try:
+        await conn.execute(statement)
+    finally:
+        await conn.close()
+
+
+@contextmanager
+def fresh_database(db: TestDatabase) -> Iterator[Settings]:
+    """A new empty database for one test session or test; dropped afterwards."""
+    name = "netscanner_test_" + secrets.token_hex(6)
+    asyncio.run(_admin(db, f'CREATE DATABASE "{name}"'))
+    try:
+        yield Settings(
+            secret_key="test-only-" + secrets.token_hex(12),
+            db_password=db.password,
+            db_host=db.host,
+            db_port=db.port,
+            db_name=name,
+            db_user=db.user,
+        )
+    finally:
+        asyncio.run(_admin(db, f'DROP DATABASE "{name}" WITH (FORCE)'))
+
+
+@pytest.fixture(scope="session")
+def store_settings(test_db: TestDatabase) -> Iterator[Settings]:
+    """Settings of a database migrated to the latest revision, shared by the session."""
+    with fresh_database(test_db) as settings:
+        assert upgrade(settings) == 0
+        yield settings
+
+
+@pytest.fixture
+async def engine(store_settings: Settings) -> AsyncIterator[AsyncEngine]:
+    engine = create_engine(store_settings)
+    try:
+        yield engine
+    finally:
+        async with engine.begin() as conn:
+            tables = ", ".join(t.name for t in metadata.sorted_tables)
+            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        await engine.dispose()
+
+
+@pytest.fixture
+async def session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    async with session_factory(engine)() as session:
+        yield session
+
+
+class Clock:
+    """A settable clock for the persistence layer."""
+
+    def __init__(self, now: datetime) -> None:
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, delta: timedelta) -> datetime:
+        self.now += delta
+        return self.now
+
+
+T0 = datetime(2026, 10, 6, 9, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def clock() -> Clock:
+    return Clock(T0)
+
+
+@pytest.fixture
+def store(engine: AsyncEngine, clock: Clock) -> Store:
+    return Store(engine, clock=clock)
+
+
+async def all_rows_text(engine: AsyncEngine) -> str:
+    """Text form of every row of every table, to search for values never stored."""
+    parts = []
+    async with engine.connect() as conn:
+        for table in metadata.sorted_tables:
+            # Table names come from the model metadata, not from input.
+            rows = await conn.execute(text(f"SELECT t::text FROM {table.name} t"))  # noqa: S608
+            parts.extend(rows.scalars())
+    return "\n".join(parts)

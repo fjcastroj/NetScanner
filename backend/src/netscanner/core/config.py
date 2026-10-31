@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal, NoReturn, TextIO
 
@@ -48,6 +49,9 @@ class Settings(BaseSettings):
     collector_heartbeat_file: Path | None = None
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    # Data not confirmed within this period is reported as stale, never deleted (RF-30).
+    stale_after: timedelta = Field(default=timedelta(days=7), gt=timedelta(0))
 
     @field_validator("secret_key", "db_password")
     @classmethod

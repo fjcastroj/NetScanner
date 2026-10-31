@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Francisco Javier Castro Jiménez
+# Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
+# Computer Engineering, Universidad Internacional de La Rioja (UNIR).
+"""Persistence layer with provenance by construction (add-data-provenance-model).
+
+The collector and the API store and read network data only through this
+package; see ``docs/provenance.md`` for the rules it enforces.
+"""

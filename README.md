@@ -11,9 +11,10 @@ device, MIB table or protocol), when it was obtained and whether it was
 observed directly or inferred, so inferences are never presented as facts.
 Nothing is installed on the monitored devices.
 
-> **Status:** project skeleton. The stack starts, migrates its (still empty)
-> database and reports its health; discovery and monitoring come in later
-> changes (see `openspec/`).
+> **Status:** project skeleton and data provenance model. The stack starts,
+> migrates its database and reports its health; the persistence layer stores
+> runs, queries and observations with their provenance. SNMP discovery and
+> monitoring come in later changes (see `openspec/`).
 
 ## Components
 
@@ -27,7 +28,8 @@ Nothing is installed on the monitored devices.
 
 Code lives in `backend/` (Python package `netscanner`), `frontend/`,
 `scripts/` (repository checks and the stack test) and `docs/`. Specifications
-and design decisions are in `openspec/`.
+and design decisions are in `openspec/`. How every stored datum records its
+origin is described in [docs/provenance.md](docs/provenance.md).
 
 ## Prerequisites
 
