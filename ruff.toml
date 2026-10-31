@@ -1,0 +1,19 @@
+# Ruff configuration for every Python file in the repository.
+line-length = 100
+target-version = "py312"
+src = ["backend/src", "backend/tests", "scripts"]
+extend-exclude = ["frontend"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # the author's name is not ASCII
+    "ASYNC109",  # explicit timeout parameters are intended
+]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["S101", "S104", "S105", "S106", "S311", "S603", "S607"]
+"scripts/**" = ["S603", "S607"]
+
+[lint.isort]
+known-first-party = ["netscanner"]

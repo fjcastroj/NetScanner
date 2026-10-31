@@ -1,0 +1,196 @@
+schema: spec-driven
+
+context: |
+  # NetScanner — project context
+
+  ## What it is
+  NetScanner is a self-hosted web application for SNMP-based discovery,
+  inventory, topology and basic monitoring of enterprise networks, plus
+  traffic analysis with sFlow v5. It is the Final Degree Project (TFE) of
+  the Bachelor's Degree in Computer Engineering at UNIR (Universidad
+  Internacional de La Rioja). One developer, limited time: essential
+  requirements first, a small well-tested core beats broad coverage.
+
+  Key differentiator: every piece of data records where it came from
+  (device, MIB table or protocol), when it was obtained and whether it was
+  OBSERVED directly or INFERRED. Inferences are never presented as facts.
+
+  ## Language
+  - Code, identifiers, comments, specs, design docs and commit messages: English.
+  - The academic report (memoria) is written in Spanish outside this repo.
+  - The UI is multilingual (RNF-12): Spanish and English at least, all UI
+    strings in translation files, never hard-coded.
+
+  ## Objectives and requirement IDs (traceability with the report, ch. 4)
+  Specs reference these IDs in requirement titles, e.g.
+  "Requirement: RF-03 Device system information". Priority in brackets:
+  [E] essential, [D] desirable, [O] optional.
+  - OE1 provenance and architecture (initial phase): RF-06, RF-28, RF-29,
+    RF-30, RNF-07, RNF-08
+  - OE2 discovery and monitoring (iteration 1): RF-01 [E] SNMP credentials,
+    write-only; RF-02 [E] seeds, allowed ranges, exclusions, max depth;
+    RF-03 [E] system group; RF-04 [E] interfaces; RF-05 [E] discovery via
+    LLDP/CDP and IP-MAC tables within allowed ranges; RF-06 [E] distinguish
+    no response / not available / empty table and store the result; RF-07
+    [E] interface counter polling with wrap and reboot handling; RF-08 [D]
+    rediscovery; RF-09 [D] traffic history view; RF-10 [O] scheduled
+    discovery
+  - OE3 inventory and location (iteration 2): RF-11 [E] device inventory;
+    RF-12 [E] IP-MAC (ipNetToPhysicalTable, fallback ipNetToMediaTable);
+    RF-13 [E] FDB with bridge port -> ifIndex and FDB id -> VLAN, discarding
+    self entries; RF-14 [E] end-host inventory by MAC; RF-15 [E] locate host
+    by IP/MAC, direct or probable; RF-16 [D] OUI vendor and DNS name; RF-17
+    [D] location history; RF-18 [D] new device alerts
+  - OE4 topology (iteration 3): RF-19 [E] links from LLDP/CDP incl.
+    one-sided; RF-20 [E] links inferred from FDB with stored evidence; RF-21
+    [E] interactive map distinguishing observed vs inferred; RF-22 [D] end
+    hosts per access port
+  - OE5 traffic (iteration 4): RF-23 [E] sFlow v5 receiver tolerant to
+    malformed datagrams; RF-24 [E] map samples to device/interface; RF-25
+    [E] estimate traffic with the sampling_rate of EACH flow sample, counter
+    samples handled separately; RF-26 [E] interface usage and top talkers and
+    protocols; RF-27 [E] deviation over a configurable threshold on the mean
+  - OE1 data origin: RF-28 [E] store source device, table/protocol,
+    timestamp and observed/inferred for every datum; RF-29 [E] show origin
+    and age in the UI; RF-30 [D] mark data stale after a configurable period
+    without deleting it
+  - OE6 evaluation (final phase): evaluate the tool on Fortinet and Juniper
+    devices against a manually built reference inventory, measuring
+    inventory coverage, location accuracy, topology accuracy and time to the
+    first complete network view. Every module must therefore record what is
+    needed to compute these measures (what was discovered, when, from which
+    source, and job start/end times).
+  - Non-functional: RNF-01 [E] SNMP credentials encrypted, never in UI, API
+    responses, logs or exports; RNF-02 [E] read-only SNMP only, never SET;
+    RNF-03 [E] only query addresses inside allowed ranges, never send
+    credentials to an unknown neighbour; RNF-04 [E] validate all input incl.
+    SNMP responses and sFlow datagrams, malformed data never crashes a
+    process; RNF-05 [E] local admin user, password hashed; RNF-06 [E] limit
+    number and rate of queries, use GetBulk where possible; RNF-07 [E]
+    independent components (web UI, API, SNMP collector, sFlow collector,
+    analysis, database); RNF-08 [E] vendor differences isolated in separate
+    modules; RNF-09 [E] single server via Docker Compose, nothing installed
+    on monitored devices; RNF-10 [E] automated tests with simulated data;
+    RNF-11 [E] open licence, public repo; RNF-12 [D] multilingual UI; RNF-13
+    [D] first network view with only credentials and seeds
+
+  ## Delivery rules
+  - Essential requirements of an iteration are finished, tested and
+    documented before any desirable one of that iteration. Optional ones are
+    done only if time remains at the end of the project.
+  - A desirable requirement may be pulled earlier only when doing it later
+    would cost much more and doing it now costs little; the design.md must
+    say so (example: the translation mechanism of RNF-12 in the skeleton).
+  - Every proposal lists the IDs it covers with their priority.
+  - Until add-admin-authentication (RNF-05) is implemented, the application
+    is used only with lab data and bound to localhost. It MUST be in place
+    before the application stores real credentials or real network data.
+
+  ## Planned change sequence (adjust only with a reason)
+  1. setup-project-skeleton
+  2. add-data-provenance-model (MANDATORY before any discovery code: origin,
+     timestamps, evidence, observed/inferred, query outcomes)
+  3. add-snmp-client-and-lab (client interface, query outcomes, snmpsim lab)
+  4. add-credentials-and-scope
+  5. add-device-discovery
+  6. add-interface-polling
+  7. add-admin-authentication
+  8. add-inventory-ui
+  Later iterations follow the report: inventory and location, topology,
+  traffic, evaluation.
+
+  ## Planned stack (change only with a design.md justification)
+  - Backend: Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 (async),
+    Alembic, asyncpg, cryptography (Fernet), argon2 for password hashing.
+  - SNMP library: PySNMP vs Net-SNMP is an OPEN decision, to be settled
+    with measurements against real devices. All SNMP access goes through a
+    project-owned client interface so the library can be swapped.
+  - sFlow: sflowtool vs own parser is an OPEN decision.
+  - Frontend: React, TypeScript, Vite, react-i18next.
+  - Topology map and chart libraries are OPEN decisions, taken in the
+    iteration that needs them (topology map: iteration 3) after comparing
+    candidates; React Flow was the initial candidate and is not a commitment. The backend
+    exposes topology as plain nodes and links with their provenance, so the
+    API and data model never depend on a visualisation library.
+  - Database: PostgreSQL. Workers coordinate through the database (no
+    message broker in the TFE scope).
+  - Deployment: Docker Compose on a single server.
+  - Lab: snmpsim agents built from anonymised snmpwalk captures of real
+    devices; synthetic data must be labelled as synthetic.
+
+  ## Domain rules learned from the previous prototype (do not relearn)
+  - ARP is not universal: routers/L3 devices expose IP-MAC tables, L2
+    switches need the FDB. No single table solves inventory.
+  - FDB entries with status self(4) never create devices. learned(3) and
+    mgmt(5) are handled explicitly.
+  - In Q-BRIDGE-MIB the FDB id is not the VLAN id: map it with
+    dot1qVlanFdbId. Bridge port numbers are not ifIndex: map them with
+    dot1dBasePortIfIndex.
+  - lldpLocPortNum is not guaranteed to equal ifIndex: resolve it and record
+    how it was resolved.
+  - LLDP links seen from only one side are valid observations.
+  - An empty or unsupported table is not an error. Always distinguish:
+    no response (timeout), not supported (noSuchObject), supported but empty,
+    partial data, error.
+  - A wrong SNMPv2c community looks like a timeout; never claim otherwise.
+  - Prefer 64-bit counters (ifHC*); with 32-bit counters on fast links,
+    multiple wraps between polls are undetectable: flag the rate as
+    unreliable instead of guessing. A sysUpTime decrease means reboot:
+    discard that delta.
+  - IP addresses are not permanent identities. Device identity: LLDP chassis
+    id when available, otherwise known management addresses.
+  - Vendor behaviour (Fortinet, Juniper, others) is never assumed: verified
+    behaviour is documented per vendor, model and firmware version.
+  - FortiSwitch in FortiLink mode: the switch's own SNMP agent is polled.
+
+  ## Security (by design, not added later)
+  - Secrets (SNMP communities, v3 keys, SECRET_KEY, DB password) never in
+    the repo, logs, API responses, exceptions or test snapshots.
+  - Configuration via environment variables; provide .env.example only.
+  - Inventory, topology and traffic data are sensitive.
+  - CONFIDENTIALITY IS A HARD RULE. Testing happens on a company network and
+    the repository will be public. Nothing confidential may ever be
+    committed: real IPs, hostnames, MAC addresses, serial numbers,
+    sysLocation/sysContact values, site names, the company name or domain,
+    topology, configurations, captures, logs, database dumps, screenshots or
+    credentials. This includes code comments, test fixtures, docs, commit
+    messages and examples.
+  - Allowed in the repo: IPv4 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24,
+    lab range 10.99.0.0/24, loopback; IPv6 2001:db8::/32, ::1, :: and a
+    fixed list of link-scope multicast groups; MACs in 00:00:5E:00:53:00-FF (RFC 7042), locally
+    administered unicast, all-zeros, broadcast and the well-known protocol
+    multicast addresses. The exact rules live in the data-confidentiality
+    spec. Device names in examples are fictitious (e.g. lab-sw-01).
+  - Raw data from the company network is kept OUTSIDE the repository folder
+    and is never read by AI tools. Only anonymised data enters the repo.
+  - A pre-commit hook and CI run a confidentiality check and a secret
+    scanner; never bypass them (no --no-verify).
+
+  ## Repository conventions
+  - Every source file starts with a header stating that it was developed as
+    part of the Final Degree Project (TFE) of the Bachelor's Degree in
+    Computer Engineering at UNIR, with the licence identifier (SPDX).
+  - No third-party code copied into the repo; dependencies are declared, and
+    any borrowed fragment states its origin and licence.
+  - Tests: pytest (backend), Vitest (frontend). Integration tests run
+    against snmpsim, never against real devices.
+  - A feature is done only with implementation, tests, docs and a
+    CHANGELOG entry.
+
+rules:
+  proposal:
+    - List the requirement IDs (RF/RNF/OE) the change implements or affects.
+    - State explicitly what is out of scope for this change.
+    - Keep changes small enough to review and test in one sitting.
+  specs:
+    - Prefix requirement titles with their ID when they implement one from the report, e.g. "RF-07 Interface counter polling".
+    - Every SNMP-related requirement includes scenarios for timeout, not supported and empty results, not only the happy path.
+    - Every requirement that handles secrets includes a scenario proving the secret is not exposed.
+    - Scenarios use lab or documentation addresses, never real ones.
+  design:
+    - For each decision, list the alternatives considered with their trade-offs and label it Confirmed, Hypothesis, Decision, Pending or Discarded.
+    - Record anything that must be verified on real Fortinet or Juniper devices as a Hypothesis with how to verify it.
+    - Describe the impact on the data model and on security.
+  tasks:
+    - Each task includes its tests; no task is complete without them.
+    - The last tasks are running the full test suite and updating CHANGELOG and docs.

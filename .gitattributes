@@ -1,0 +1,9 @@
+# Force LF line endings for every text file so scripts and configuration
+# copied into Linux containers work when checked out on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -1,0 +1,24 @@
+{
+  "app": {
+    "name": "NetScanner",
+    "tagline": "Network discovery and inventory"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "empty": "Sections will appear here."
+  },
+  "language": {
+    "label": "Language",
+    "es": "Español",
+    "en": "English"
+  },
+  "status": {
+    "label": "Service status",
+    "checking": "Checking the service…",
+    "available": "Service available",
+    "unavailable": "Service unavailable"
+  },
+  "home": {
+    "placeholder": "No network has been configured yet."
+  }
+}

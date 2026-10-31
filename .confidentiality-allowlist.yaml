@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Francisco Javier Castro Jiménez
+# Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
+# Computer Engineering, Universidad Internacional de La Rioja (UNIR).
+#
+# Exceptions for scripts/check_confidentiality.py. Each entry allows one exact
+# value (no wildcards) in the listed files only, and needs a reason. Entries
+# that no longer match anything are reported as stale. `paths` may use globs
+# so that an entry keeps working after `openspec archive` moves a spec.
+
+entries:
+  - value: "10.0.0.0/8"
+    paths: &range-docs
+      - "openspec/**/data-confidentiality/spec.md"
+      - "docs/confidentiality.md"
+    reason: Names a forbidden private block in CIDR notation; not a host.
+  - value: "172.16.0.0/12"
+    paths: *range-docs
+    reason: Names a forbidden private block in CIDR notation; not a host.
+  - value: "192.168.0.0/16"
+    paths: *range-docs
+    reason: Names a forbidden private block in CIDR notation; not a host.
+  - value: "fc00::/7"
+    paths: *range-docs
+    reason: Names the forbidden IPv6 unique local block; not a host.
+  - value: "fe80::/10"
+    paths: *range-docs
+    reason: Names the forbidden IPv6 link-local block; not a host.

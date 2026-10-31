@@ -1,0 +1,24 @@
+{
+  "app": {
+    "name": "NetScanner",
+    "tagline": "Descubrimiento e inventario de redes"
+  },
+  "nav": {
+    "label": "Navegación principal",
+    "empty": "Las secciones aparecerán aquí."
+  },
+  "language": {
+    "label": "Idioma",
+    "es": "Español",
+    "en": "English"
+  },
+  "status": {
+    "label": "Estado del servicio",
+    "checking": "Comprobando el servicio…",
+    "available": "Servicio disponible",
+    "unavailable": "Servicio no disponible"
+  },
+  "home": {
+    "placeholder": "Todavía no hay ninguna red configurada."
+  }
+}

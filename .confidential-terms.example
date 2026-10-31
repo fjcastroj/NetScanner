@@ -1,0 +1,7 @@
+# Copy this file to .confidential-terms (ignored by Git) and list the real
+# confidential terms of the network you test on: company name, domains, site
+# names, hostname patterns. One term per line, matched case-insensitively.
+# Lines starting with # are comments. The terms below are fictitious.
+examplecorp
+examplecorp.invalid
+lab-site-north
