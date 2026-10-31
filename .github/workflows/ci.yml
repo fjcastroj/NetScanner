@@ -21,6 +21,7 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
@@ -46,12 +47,13 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check ..
       - run: uv run ruff format --check ..
-      - run: uv run pytest
+      - run: uv run pytest -v
       - name: Tests of the repository scripts
-        run: uv run pytest ../scripts/tests
+        run: uv run pytest -v ../scripts/tests
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -69,6 +71,7 @@ jobs:
 
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -91,6 +94,7 @@ jobs:
 
   stack:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v7

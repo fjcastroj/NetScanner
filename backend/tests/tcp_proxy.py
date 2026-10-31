@@ -35,6 +35,11 @@ class TcpProxy:
     def stop(self) -> None:
         with self._lock:
             if self._listener is not None:
+                # On Linux close() alone does not wake the thread blocked in
+                # accept(), which would keep accepting on the old socket and
+                # the outage would never happen; shutdown() makes it return.
+                with contextlib.suppress(OSError):
+                    self._listener.shutdown(socket.SHUT_RDWR)
                 self._listener.close()
                 self._listener = None
             for conn in self._conns:
@@ -68,6 +73,11 @@ class TcpProxy:
         except OSError:
             pass
         finally:
+            # shutdown() as in stop(): close() alone would neither wake the
+            # pump blocked in recv() on the other direction nor send the FIN
+            # the peer is waiting for.
             for s in (src, dst):
+                with contextlib.suppress(OSError):
+                    s.shutdown(socket.SHUT_RDWR)
                 with contextlib.suppress(OSError):
                     s.close()
