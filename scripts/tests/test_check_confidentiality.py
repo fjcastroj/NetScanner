@@ -298,3 +298,38 @@ def test_cli_all_scans_git_files(repo: Repo) -> None:
     assert cc.main(["--all", "--root", str(repo.root)]) == 0
     repo.write("dirty.txt", v4(172, 20, 1, 1))
     assert cc.main(["--all", "--root", str(repo.root)]) == 1
+
+
+# --- Netmasks in lab data (add-snmp-client-and-lab, design D12) -------------
+
+NETMASK_OID = "1.3.6.1.2.1.4.20.1.3.10.99.0.1"
+MASK_26 = v4(255, 255, 255, 192)
+
+
+def test_netmask_in_lab_netmask_column_allowed(repo: Repo) -> None:
+    rel = repo.write("lab/snmpsim/data/x.snmprec", f"{NETMASK_OID}|64|{MASK_26}\n")
+    assert repo.run([rel])[0] == 0
+    short = v4(192, 0, 0, 0)  # a /2 mask is contiguous too
+    rel = repo.write("lab/snmpsim/data/y.snmprec", f"{NETMASK_OID}|64|{short}\n")
+    assert repo.run([rel])[0] == 0
+
+
+@pytest.mark.parametrize(
+    ("rel", "line"),
+    [
+        # Same value in another column (ipAdEntAddr).
+        ("lab/snmpsim/data/x.snmprec", f"1.3.6.1.2.1.4.20.1.1.10.99.0.1|64|{MASK_26}"),
+        # Another file type under lab/.
+        ("lab/notes.txt", f"{NETMASK_OID}|64|{MASK_26}"),
+        # A snmprec file outside lab/.
+        ("data/x.snmprec", f"{NETMASK_OID}|64|{MASK_26}"),
+        # Non-contiguous value in the netmask column.
+        ("lab/snmpsim/data/x.snmprec", f"{NETMASK_OID}|64|{v4(255, 0, 255, 0)}"),
+        # A host mask is not a netmask.
+        ("lab/snmpsim/data/x.snmprec", f"{NETMASK_OID}|64|{v4(0, 0, 0, 255)}"),
+    ],
+)
+def test_netmask_like_values_elsewhere_reported(repo: Repo, rel: str, line: str) -> None:
+    repo.write(rel, line + "\n")
+    code, out, _ = repo.run([rel])
+    assert code == 1 and f"{rel}:1: IPv4 address" in out

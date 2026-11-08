@@ -15,9 +15,12 @@ import asyncio
 import logging
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
+import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -256,3 +259,104 @@ async def all_rows_text(engine: AsyncEngine) -> str:
             rows = await conn.execute(text(f"SELECT t::text FROM {table.name} t"))  # noqa: S608
             parts.extend(rows.scalars())
     return "\n".join(parts)
+
+
+# --- SNMP lab (add-snmp-client-and-lab, design D10) -------------------------
+
+LAB_DATA = REPO_ROOT / "lab" / "snmpsim" / "data"
+LAB_REQUIREMENTS = REPO_ROOT / "lab" / "snmpsim" / "requirements.txt"
+
+
+@dataclass(frozen=True)
+class SnmpLab:
+    """snmpsim serving the lab data; each device is selected by its community."""
+
+    host: str
+    port: int
+    v3_user: str
+    v3_auth_key: str
+    v3_priv_key: str
+
+    def secrets(self) -> list[str]:
+        return [self.v3_auth_key, self.v3_priv_key]
+
+
+def free_udp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _lab_unavailable(reason: str) -> None:
+    if os.environ.get("NETSCANNER_TEST_REQUIRE_LAB") == "1":
+        pytest.fail(f"SNMP lab required (NETSCANNER_TEST_REQUIRE_LAB=1): {reason}")
+    pytest.skip(f"SNMP lab not available: {reason}")
+
+
+async def _lab_answers(lab: SnmpLab) -> bool:
+    from netscanner.snmp import SnmpV2cCredential, Target, get_table
+    from netscanner.snmp.pysnmp_client import PySnmpClient
+    from netscanner.snmp.walker import SnmpLimits
+
+    client = PySnmpClient(SnmpLimits(timeout=1, retries=0))
+    target = Target(lab.host, SnmpV2cCredential(community="lab-sw-02"), port=lab.port)
+    result = await client.walk_table(target, get_table("SNMPv2-MIB::system"), ["sysName"])
+    return result.row_count == 1
+
+
+@pytest.fixture(scope="session")
+def snmp_lab(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SnmpLab]:
+    """snmpsim with the lab data on a free local port, from its own pinned tools."""
+    uv = shutil.which("uv")
+    if uv is None:
+        _lab_unavailable("uv is not installed")
+    as_root = hasattr(os, "geteuid") and os.geteuid() == 0
+    # As root, snmpsim drops to nobody, which cannot enter pytest's private
+    # temporary directories: use a readable one of its own.
+    work = (
+        Path(tempfile.mkdtemp(prefix="netscanner-snmpsim-"))
+        if as_root
+        else tmp_path_factory.mktemp("snmpsim")
+    )
+    data, cache = work / "data", work / "cache"
+    shutil.copytree(LAB_DATA, data)  # indexes are written next to the data
+    cache.mkdir()
+    if as_root:
+        for path in (work, data, cache, *data.iterdir()):
+            path.chmod(0o777 if path.is_dir() else 0o644)
+    lab = SnmpLab(
+        host="127.0.0.1",
+        port=free_udp_port(),
+        v3_user="lab-v3-user",
+        v3_auth_key="lab-auth-" + secrets.token_hex(8),
+        v3_priv_key="lab-priv-" + secrets.token_hex(8),
+    )
+    args = [
+        uv, "run", "--no-project", "--python", "3.12",
+        "--with-requirements", str(LAB_REQUIREMENTS),
+        "snmpsim-command-responder",
+        f"--data-dir={data}", f"--cache-dir={cache}",
+        f"--agent-udpv4-endpoint={lab.host}:{lab.port}",
+        f"--v3-user={lab.v3_user}", f"--v3-auth-key={lab.v3_auth_key}",
+        "--v3-auth-proto=SHA256", f"--v3-priv-key={lab.v3_priv_key}", "--v3-priv-proto=AES",
+    ]  # fmt: skip
+    if as_root:
+        # snmpsim refuses to run as root without a user to drop privileges to.
+        args += ["--process-user=nobody", "--process-group=nogroup"]
+    log = (work / "snmpsim.log").open("wb")
+    process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, cwd=work)
+    try:
+        deadline = time.monotonic() + 180  # the first run installs the tools
+        while not asyncio.run(_lab_answers(lab)):
+            if process.poll() is not None or time.monotonic() > deadline:
+                _lab_unavailable("snmpsim did not start (see its log in the pytest temp dir)")
+        yield lab
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        log.close()
+        if as_root:
+            shutil.rmtree(work, ignore_errors=True)

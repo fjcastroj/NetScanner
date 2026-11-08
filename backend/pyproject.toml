@@ -8,8 +8,10 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20",
     "asyncpg>=0.32",
+    "cryptography>=50.0.2",
     "fastapi>=0.162",
     "pydantic-settings>=2.16",
+    "pysnmp==7.1.32",
     "sqlalchemy[asyncio]>=2.1",
     "uvicorn>=0.54",
 ]
@@ -32,7 +34,10 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["db: needs a PostgreSQL server (see tests/conftest.py)"]
+markers = [
+    "db: needs a PostgreSQL server (see tests/conftest.py)",
+    "lab: needs the snmpsim lab (see tests/conftest.py)",
+]
 # A hanging test fails with a stack dump instead of blocking CI.
 timeout = 60
 timeout_method = "thread"

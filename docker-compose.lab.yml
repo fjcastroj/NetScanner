@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Francisco Javier Castro Jiménez
+# Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
+# Computer Engineering, Universidad Internacional de La Rioja (UNIR).
+#
+# SNMP lab (design D9, snmp-lab spec): one snmpsim container per lab device on
+# netscanner-lab (10.99.0.0/24), and the collector attached to that network.
+# Used only together with the main file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.lab.yml up -d --build
+#
+# Without this file no stack creates the lab subnet. Origins and the IP plan
+# are in lab/manifest.yaml and lab/README.md.
+
+x-lab-agent: &lab-agent
+  build: ./lab/snmpsim
+  image: netscanner-snmpsim:local
+  # Port 161 without root: the image runs as an unprivileged user.
+  sysctls:
+    net.ipv4.ip_unprivileged_port_start: "0"
+  read_only: true
+  tmpfs: ["/tmp:mode=1777"]  # snmpsim index cache and temporary files
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  restart: unless-stopped
+
+services:
+  collector:
+    networks:
+      default: {}
+      netscanner-lab: {}
+
+  lab-srx-01:
+    <<: *lab-agent
+    volumes:
+      - ./lab/snmpsim/data/srx-01.snmprec:/data/netscanner-lab.snmprec:ro
+    networks:
+      netscanner-lab:
+        ipv4_address: 10.99.0.13
+
+  lab-sw-01:
+    <<: *lab-agent
+    volumes:
+      - ./lab/snmpsim/data/lab-sw-01.snmprec:/data/netscanner-lab.snmprec:ro
+    networks:
+      netscanner-lab:
+        ipv4_address: 10.99.0.2
+
+  lab-sw-02:
+    <<: *lab-agent
+    volumes:
+      - ./lab/snmpsim/data/lab-sw-02.snmprec:/data/netscanner-lab.snmprec:ro
+    networks:
+      netscanner-lab:
+        ipv4_address: 10.99.0.3
+
+networks:
+  netscanner-lab:
+    # No route outside: lab agents and the collector only.
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.99.0.0/24
+          gateway: 10.99.0.1
+          # Dynamic addresses (the collector) stay clear of the fixed ones.
+          ip_range: 10.99.0.240/28

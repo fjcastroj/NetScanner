@@ -8,6 +8,34 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Read-only SNMP client (`add-snmp-client-and-lab`, RF-06, RNF-01, RNF-02,
+  RNF-04, RNF-06): package `netscanner.snmp` with a project-owned client
+  interface and a PySNMP 7.1.32 implementation. It uses GET and GETBULK
+  only, supports SNMPv2c and SNMPv3 (SHA-family authentication, AES
+  privacy) and refuses SNMPv1, MD5 and DES.
+- Table walks classified by a column probe, never the table node: `ok`,
+  `empty`, `not_available`, `partial`, `no_response` and `error`, with the
+  indicator and a fixed vocabulary of error categories (timeouts, error
+  statuses, SNMPv3 reports, non-increasing OIDs, row limit). Migration
+  `0003` adds the indicator `value_returned`.
+- Load limits: one request in flight per device, a global device limit,
+  max-repetitions 25 (at most 50), timeout, retries and a row limit, set
+  through `NETSCANNER_SNMP_*` settings. Credentials are held in memory only,
+  masked in logs while in use, and proven absent by canary tests.
+- SNMP lab (`lab/`):
+  - the real, anonymised `srx-01` (Juniper SRX1500, JUNOS 19.4R3.11) and two
+    synthetic switches generated reproducibly from it;
+  - a manifest of origins and a README of limitations and pending
+    hypotheses;
+  - a pinned snmpsim image, and `docker-compose.lab.yml` putting each
+    device on its own address in 10.99.0.0/24;
+  - a pytest fixture, and a scripted SNMP agent for what snmpsim cannot
+    reproduce.
+- Library decision `docs/decisions/snmp-library.md`, measured against
+  Net-SNMP. Vendor note `docs/vendors/juniper-srx1500.md`, with the status of
+  hypotheses H1 to H6.
+- Confidentiality check: contiguous netmasks allowed only in the
+  `ipAdEntNetMask` column of lab data files.
 - Data provenance model (`add-data-provenance-model`, RF-28, RF-06 storage,
   RF-29, RF-30, OE1, OE6): migration `0002` with collection runs, SNMP query
   records, devices, identity resolutions and conflicts, devices reached per

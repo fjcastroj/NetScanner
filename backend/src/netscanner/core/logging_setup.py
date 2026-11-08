@@ -8,10 +8,34 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Iterable
+import threading
+from collections import Counter
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 
 MASK = "***"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+# Secrets in use right now (for example an SNMP community during a query),
+# masked by every SecretMaskingFilter in addition to its own list.
+_in_use: Counter[str] = Counter()
+_in_use_lock = threading.Lock()
+
+
+@contextmanager
+def secrets_in_use(values: Iterable[str]) -> Iterator[None]:
+    """Mask ``values`` in every log record while the block runs."""
+    registered = [v for v in values if v]
+    with _in_use_lock:
+        _in_use.update(registered)
+    try:
+        yield
+    finally:
+        with _in_use_lock:
+            _in_use.subtract(registered)
+            for value in registered:
+                if _in_use[value] <= 0:
+                    del _in_use[value]
 
 
 class SecretMaskingFilter(logging.Filter):
@@ -28,7 +52,9 @@ class SecretMaskingFilter(logging.Filter):
         self._formatter = logging.Formatter()
 
     def mask(self, text: str) -> str:
-        for secret in self._secrets:
+        with _in_use_lock:
+            current = set(_in_use)
+        for secret in sorted(current.union(self._secrets), key=len, reverse=True):
             text = text.replace(secret, MASK)
         return text
 

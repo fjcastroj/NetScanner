@@ -109,7 +109,7 @@ async def test_present_after_a_later_partial_confirmation(lab: Lab) -> None:
     complete = await lab.query(REM, device=device, rows=1)
     await lab.store.store_neighbors(complete, device, [entry(1)])
     partial = await lab.query(
-        REM, device=device, at=DAY, outcome="partial", error_category="transport-error"
+        REM, device=device, at=DAY, outcome="partial", error_category="transport_error"
     )
     await lab.store.store_neighbors(partial, device, [entry(1)])
     (neighbor,) = await lab.store.read_neighbors(device)
@@ -137,8 +137,8 @@ async def test_missing_from_the_latest_complete_query(lab: Lab) -> None:
     "latest",
     [
         {"outcome": "no_response", "rows": 0},
-        {"outcome": "partial", "error_category": "transport-error"},
-        {"outcome": "error", "rows": 0, "error_category": "snmp-error-status"},
+        {"outcome": "partial", "error_category": "transport_error"},
+        {"outcome": "error", "rows": 0, "error_category": "error_status:genErr"},
         {"outcome": "ok", "rows": 2, "rejected": 1},
     ],
 )
@@ -163,7 +163,7 @@ async def test_presence_unknown_without_a_complete_query(lab: Lab) -> None:
     await lab.run()
     device = await lab.device()
     partial = await lab.query(
-        REM, device=device, outcome="partial", error_category="transport-error"
+        REM, device=device, outcome="partial", error_category="transport_error"
     )
     await lab.store.store_neighbors(partial, device, [entry(1)])
     (neighbor,) = await lab.store.read_neighbors(device)
@@ -182,7 +182,7 @@ async def test_age_of_a_carried_field_comes_from_its_own_query(lab: Lab, clock: 
         device=device,
         at=2 * DAY,
         outcome="partial",
-        error_category="transport-error",
+        error_category="transport_error",
     )
     await lab.store.store_if_xtable(partial, device, [{"if_index": 1, "if_name": "lab-port-1"}])
     clock.now = T0 + 8 * DAY

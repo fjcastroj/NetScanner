@@ -33,6 +33,11 @@ MIB_OBJECTS: frozenset[str] = frozenset(
         "IP-MIB::ipAddrTable",
         "IP-MIB::ipNetToPhysicalTable",
         "IP-MIB::ipNetToMediaTable",
+        "BRIDGE-MIB::dot1dBase",
+        "BRIDGE-MIB::dot1dBasePortTable",
+        "BRIDGE-MIB::dot1dTpFdbTable",
+        "Q-BRIDGE-MIB::dot1qTpFdbTable",
+        "Q-BRIDGE-MIB::dot1qVlanCurrentTable",
     }
 )
 
@@ -182,6 +187,8 @@ class Indicator(StrEnum):
     NO_SUCH_INSTANCE = "noSuchInstance"
     END_OF_MIB_VIEW = "endOfMibView"
     END_OF_SUBTREE = "end_of_subtree"
+    # The column probe returned a value: an ambiguous answer kept for review.
+    VALUE_RETURNED = "value_returned"
 
 
 class Operation(StrEnum):
@@ -197,14 +204,50 @@ class SnmpVersion(StrEnum):
     V3 = "3"
 
 
+# SNMP error statuses (RFC 3416) and USM report counters (RFC 3414) that the
+# client names in its categories (design D6 of add-snmp-client-and-lab).
+SNMP_ERROR_STATUSES = (
+    "tooBig",
+    "noSuchName",
+    "badValue",
+    "readOnly",
+    "genErr",
+    "noAccess",
+    "wrongType",
+    "wrongLength",
+    "wrongEncoding",
+    "wrongValue",
+    "noCreation",
+    "inconsistentValue",
+    "resourceUnavailable",
+    "commitFailed",
+    "undoFailed",
+    "authorizationError",
+    "notWritable",
+    "inconsistentName",
+)
+SNMP_V3_REPORTS = (
+    "unknownUserName",
+    "wrongDigest",
+    "unsupportedSecLevel",
+    "notInTimeWindow",
+    "unknownEngineID",
+    "decryptionError",
+)
+
 ERROR_CATEGORIES: frozenset[str] = frozenset(
     {
-        "snmp-error-status",
-        "decode-error",
-        "transport-error",
-        "validation-error",
-        "database-error",
-        "internal-error",
+        # One vocabulary in the style of design D6 (add-snmp-client-and-lab).
+        "timeout",
+        "decode_error",
+        "transport_error",
+        "non_increasing_oid",
+        "row_limit",
+        "validation_error",
+        "database_error",
+        "internal_error",
+        *(f"error_status:{name}" for name in SNMP_ERROR_STATUSES),
+        *(f"v3_report:{name}" for name in SNMP_V3_REPORTS),
     }
 )
 

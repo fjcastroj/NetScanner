@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Francisco Javier Castro Jiménez
+# Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
+# Computer Engineering, Universidad Internacional de La Rioja (UNIR).
+#
+# Lab devices and the origin of their data (snmp-lab spec). See README.md.
+# origin: real-anonymised | synthetic. Synthetic devices list, under
+# derived_values, every value set taken from another device; everything else
+# in them is invented.
+
+network: 10.99.0.0/24
+gateway: 10.99.0.1
+community: netscanner-lab  # lab only; see .env.example
+
+devices:
+  - label: srx-01
+    origin: real-anonymised
+    data: snmpsim/data/srx-01.snmprec
+    management_address: 10.99.0.13  # chosen by generate_synthetic.py among its own addresses
+    model: Juniper SRX1500
+    firmware: JUNOS 19.4R3.11
+    capture_date: 2026-11-03
+    anonymisation:
+      - every IPv4 address mapped consistently to 10.99.0.0/24, 192.0.2.0/24 or 198.51.100.0/24
+      - every MAC address mapped consistently to locally administered 02:00:00:xx:xx:xx
+      - names replaced by lab-dev-NN labels; sysContact and sysLocation dropped
+      - free-text and unknown octet-string values scrubbed or not copied
+      - reviewed by the author before entering the repository
+    note: fixture of one model and firmware on one capture date, not a description of Juniper devices
+
+  - label: lab-sw-01
+    origin: synthetic
+    data: snmpsim/data/lab-sw-01.snmprec
+    generator: generate_synthetic.py
+    management_address: 10.99.0.2
+    models: Juniper-like access switch (sysObjectID of an EX2300), Q-BRIDGE FDB, LLDP
+    derived_values:
+      - values: 30 host MAC addresses in dot1qTpFdbTable
+        from: srx-01
+        source: ipNetToPhysicalTable entries of the srx-01 interface with most entries (fixed seed)
+      - values: srx-01 MAC address learned on the uplink port ge-0/0/23
+        from: srx-01
+        source: ifPhysAddress of the interface holding its management address
+
+  - label: lab-sw-02
+    origin: synthetic
+    data: snmpsim/data/lab-sw-02.snmprec
+    generator: generate_synthetic.py
+    management_address: 10.99.0.3
+    models: Fortinet-like switch (FortiSwitch sysObjectID), no LLDP-MIB, no ifXTable
+    derived_values:
+      - values: 5 host MAC and IPv4 address pairs in dot1dTpFdbTable and ipNetToMediaTable
+        from: srx-01
+        source: ipNetToPhysicalTable entries of the srx-01 interface with the second most entries (fixed seed)
+
+unanswered:
+  - address: 10.99.0.9
+    note: in the lab range; no agent answers there
+
+external:
+  - address: 203.0.113.10
+    note: management address advertised over LLDP by lab-ap-01 (seen from lab-sw-01); outside the lab range, never queried

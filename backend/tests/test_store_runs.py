@@ -80,9 +80,9 @@ async def test_run_lifecycle(store: Store, engine: AsyncEngine, clock: Clock) ->
 async def test_failed_run_stores_category_only(store: Store, engine: AsyncEngine) -> None:
     run = await store.create_run("polling", {})
     await store.start_run(run)
-    await store.finish_run(run, "failed", error_category="database-error")
+    await store.finish_run(run, "failed", error_category="database_error")
     row = await run_row(engine, run)
-    assert (row["status"], row["error_category"]) == ("failed", "database-error")
+    assert (row["status"], row["error_category"]) == ("failed", "database_error")
     with pytest.raises(StoreError, match="unknown error category"):
         run2 = await store.create_run("polling", {})
         await store.start_run(run2)
@@ -152,10 +152,12 @@ async def test_parameters_with_a_secret_rejected(
     [
         ({"outcome": "ok", "row_count": 3}, True),
         ({"outcome": "empty", "row_count": 0, "indicator": "end_of_subtree"}, True),
+        # An ambiguous column probe (add-snmp-client-and-lab, design D4).
+        ({"outcome": "empty", "row_count": 0, "indicator": "value_returned"}, True),
         ({"outcome": "not_available", "row_count": 0, "indicator": "noSuchObject"}, False),
         ({"outcome": "no_response", "row_count": 0, "request_count": 3}, False),
-        ({"outcome": "partial", "row_count": 2, "error_category": "transport-error"}, False),
-        ({"outcome": "error", "row_count": 0, "error_category": "snmp-error-status"}, False),
+        ({"outcome": "partial", "row_count": 2, "error_category": "transport_error"}, False),
+        ({"outcome": "error", "row_count": 0, "error_category": "error_status:genErr"}, False),
     ],
 )
 async def test_query_outcome_stored(
@@ -178,7 +180,7 @@ async def test_no_response_stored_without_diagnosis(store: Store, engine: AsyncE
     query_id = await store.record_query(query(run, outcome="no_response", row_count=0))
     row = await query_row(engine, query_id)
     assert (row["indicator"], row["error_category"]) == (None, None)
-    for diagnosis in ({"indicator": "noSuchObject"}, {"error_category": "transport-error"}):
+    for diagnosis in ({"indicator": "noSuchObject"}, {"error_category": "transport_error"}):
         with pytest.raises(StoreError):
             await store.record_query(query(run, outcome="no_response", row_count=0, **diagnosis))
 
@@ -218,11 +220,11 @@ async def test_error_with_sensitive_text_stores_only_its_category(
         f"connect lab-sw-01 community={canaries.secret_key} key={canaries.db_password}"
     )
     query_id = await store.record_query(query(run, outcome="error", row_count=0), error=exc)
-    assert (await query_row(engine, query_id))["error_category"] == "internal-error"
+    assert (await query_row(engine, query_id))["error_category"] == "internal_error"
     timeout = await store.record_query(
         query(run, outcome="partial", row_count=1), error=TimeoutError(canaries.secret_key)
     )
-    assert (await query_row(engine, timeout))["error_category"] == "transport-error"
+    assert (await query_row(engine, timeout))["error_category"] == "timeout"
     canaries.assert_absent(await all_rows_text(engine))
 
 

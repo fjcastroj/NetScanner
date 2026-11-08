@@ -214,12 +214,14 @@ class QueryRecord(BaseModel):
 def error_category_for(exc: BaseException) -> str:
     """Category of an exception raised while querying; its text is never stored."""
     if isinstance(exc, UnicodeError):
-        return "decode-error"
-    if isinstance(exc, TimeoutError | OSError):
-        return "transport-error"
+        return "decode_error"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, OSError):
+        return "transport_error"
     if isinstance(exc, ValueError):
-        return "validation-error"
-    return "internal-error"
+        return "validation_error"
+    return "internal_error"
 
 
 @dataclass(frozen=True)

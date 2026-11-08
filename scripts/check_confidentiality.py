@@ -235,6 +235,32 @@ def scan_line(text: str) -> list[tuple[str, str]]:
     return found
 
 
+# Netmasks are allowed only in the ipAdEntNetMask column of lab data (design
+# D12 of add-snmp-client-and-lab); there is no global "looks like a mask" rule.
+LAB_DATA_RE = glob_to_regex("lab/**/*.snmprec")
+NETMASK_OID_PREFIX = "1.3.6.1.2.1.4.20.1.3."
+
+
+def is_contiguous_netmask(value: str) -> bool:
+    try:
+        n = int(ipaddress.IPv4Address(value))
+    except ValueError:
+        return False
+    inverted = n ^ 0xFFFFFFFF
+    return inverted & (inverted + 1) == 0  # ones followed only by zeros
+
+
+def lab_netmask(rel: str, line: str) -> str | None:
+    """The netmask value of an ``ipAdEntNetMask`` line in lab data, if any."""
+    if not LAB_DATA_RE.fullmatch(rel):
+        return None
+    parts = line.split("|", 2)
+    if len(parts) != 3 or not parts[0].startswith(NETMASK_OID_PREFIX):
+        return None
+    value = parts[2].strip()
+    return value if is_contiguous_netmask(value) else None
+
+
 def is_binary(data: bytes) -> bool:
     return b"\0" in data[:8192]
 
@@ -258,8 +284,11 @@ def scan_file(
 
     findings = []
     for lineno, line in enumerate(text.splitlines(), start=1):
+        netmask = lab_netmask(rel, line)
         for kind, token in scan_line(line):
             if token in own_values:
+                continue
+            if kind == "IPv4 address" and token == netmask:
                 continue
             entry = next((e for e in applicable if e.value == token), None)
             if entry is not None:

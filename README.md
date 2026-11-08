@@ -11,10 +11,11 @@ device, MIB table or protocol), when it was obtained and whether it was
 observed directly or inferred, so inferences are never presented as facts.
 Nothing is installed on the monitored devices.
 
-> **Status:** project skeleton and data provenance model. The stack starts,
-> migrates its database and reports its health; the persistence layer stores
-> runs, queries and observations with their provenance. SNMP discovery and
-> monitoring come in later changes (see `openspec/`).
+> **Status:** project skeleton, data provenance model and SNMP client with
+> its lab. The stack starts, migrates its database and reports its health;
+> the persistence layer stores runs, queries and observations with their
+> provenance; a read-only SNMP client queries the simulated lab. Discovery
+> and monitoring come in later changes (see `openspec/`).
 
 ## Components
 
@@ -75,6 +76,11 @@ docker run -d --rm --name netscanner-test-db -p 127.0.0.1:55432:5432 \
   -e POSTGRES_USER=netscanner -e POSTGRES_DB=netscanner \
   -e POSTGRES_PASSWORD=<random> postgres:17-alpine
 ```
+
+The SNMP client tests start the lab simulator from its own pinned tools
+(`uv` downloads them on first use) and are skipped without it, unless
+`NETSCANNER_TEST_REQUIRE_LAB=1` (set in CI). The lab itself, with one agent
+per device on 10.99.0.0/24, is described in [lab/README.md](lab/README.md).
 
 Frontend:
 

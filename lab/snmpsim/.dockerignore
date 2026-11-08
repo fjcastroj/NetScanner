@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Only the Dockerfile and the pinned requirements are needed to build.
+*
+!Dockerfile
+!requirements.txt

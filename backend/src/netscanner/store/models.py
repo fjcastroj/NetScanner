@@ -66,7 +66,13 @@ def _ts(name: str, nullable: bool = True) -> Column:
 RUN_KINDS = ("discovery", "rediscovery", "polling")
 RUN_STATUSES = ("pending", "running", "completed", "failed", "interrupted")
 OUTCOMES = ("ok", "empty", "not_available", "no_response", "partial", "error")
-INDICATORS = ("noSuchObject", "noSuchInstance", "endOfMibView", "end_of_subtree")
+INDICATORS = (
+    "noSuchObject",
+    "noSuchInstance",
+    "endOfMibView",
+    "end_of_subtree",
+    "value_returned",
+)
 OPERATIONS = ("get", "getnext", "getbulk", "walk")
 SNMP_VERSIONS = ("1", "2c", "3")
 REACHED_VIA = ("seed", "lldp", "cdp", "ip-mac")

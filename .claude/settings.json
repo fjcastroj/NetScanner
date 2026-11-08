@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/local)",
+      "Read(/local/**)",
+      "Read(./local/**)",
+      "Edit(/local)",
+      "Edit(/local/**)",
+      "Edit(./local/**)",
+      "Bash(* local)",
+      "Bash(* local/*)",
+      "Bash(* ./local)",
+      "Bash(* ./local/*)",
+      "Bash(*NetScanner/local*)",
+      "Bash(*NetScanner\\local*)",
+      "PowerShell(* local)",
+      "PowerShell(* local/*)",
+      "PowerShell(* local\\*)",
+      "PowerShell(* ./local*)",
+      "PowerShell(* .\\local*)",
+      "PowerShell(*NetScanner/local*)",
+      "PowerShell(*NetScanner\\local*)"
+    ]
+  }
+}

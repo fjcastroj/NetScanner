@@ -229,7 +229,7 @@ async def test_query_outcome_rules(engine: AsyncEngine) -> None:
         ({"outcome": "empty"}, "indicator_required"),
         ({"outcome": "error"}, "error_category"),
         ({"outcome": "no_response", "row_count": 0, "indicator": "noSuchObject"}, "no_diagnosis"),
-        ({"outcome": "ok", "error_category": "decode-error"}, "error_only_on_failure"),
+        ({"outcome": "ok", "error_category": "decode_error"}, "error_only_on_failure"),
         ({"rejected_count": 2}, "counts"),
     ]
     for values, constraint in cases:

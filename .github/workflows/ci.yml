@@ -38,6 +38,7 @@ jobs:
       NETSCANNER_TEST_DB_PORT: "5432"
       NETSCANNER_TEST_DB_PASSWORD: ci-only-test-password
       NETSCANNER_TEST_REQUIRE_DB: "1"
+      NETSCANNER_TEST_REQUIRE_LAB: "1"
     defaults:
       run:
         working-directory: backend
@@ -45,6 +46,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --locked
+      - name: Lab simulator tools (pinned, separate from the project)
+        run: >-
+          uv run --no-project --python 3.12
+          --with-requirements ../lab/snmpsim/requirements.txt
+          snmpsim-command-responder --help > /dev/null
       - run: uv run ruff check ..
       - run: uv run ruff format --check ..
       - run: uv run pytest -v

@@ -29,13 +29,21 @@ For each object, also note the query outcome (ok, empty, not available, no
 response, partial, error) and the indicator returned (`noSuchObject`,
 `noSuchInstance`, `endOfMibView` or end of subtree).
 
-## Hypotheses (pending)
+## Hypotheses
+
+The status is per model and firmware. "Confirmed" holds only for the models
+listed; every other model stays pending until it is captured.
 
 | Id | Hypothesis | How to verify | Status |
 |----|------------|---------------|--------|
-| H1 | `lldpLocPortNum` may or may not equal `ifIndex` | Compare `lldpLocPortTable` with `ifXTable` on each model | Pending |
-| H2 | `ifIndex` values persist across reboots | Two comparable captures around a reboot; with only one capture it stays pending and is documented as a limitation | Pending |
-| H3 | Chassis identifiers are unique and stable | Uniqueness across the captured devices; stability needs comparable captures over time. Check HA clusters and virtual chassis, which may share one chassis id and model | Pending |
+| H1 | `lldpLocPortNum` may or may not equal `ifIndex` | Compare `lldpLocPortTable` with `ifXTable` on each model | Pending: not testable on the SRX1500 capture (no local port entries) |
+| H2 | `ifIndex` values persist across reboots | Two comparable captures around a reboot; with only one capture it stays pending and is documented as a limitation | Pending: one capture only |
+| H3 | Chassis identifiers are unique and stable | Uniqueness across the captured devices; stability needs comparable captures over time. Check HA clusters and virtual chassis, which may share one chassis id and model | Pending: one device captured (an SRX chassis cluster) |
+| H4 | The agent distinguishes `noSuchObject` from `noSuchInstance` on a column probe | GET on columns of implemented and unimplemented objects, without index | Confirmed for Juniper SRX1500, JUNOS 19.4R3.11; pending elsewhere |
+| H5 | GETBULK works, is faster than GETNEXT, and its limits on repetitions | Walk times and errors with 10, 25 and 50 repetitions against GETNEXT | Confirmed for Juniper SRX1500, JUNOS 19.4R3.11 (no errors up to 50); pending elsewhere |
+| H6 | A FortiSwitch in FortiLink mode answers SNMP on its own address, and with which tables | Capture of a managed FortiSwitch on its own address | Pending: no FortiSwitch captured (not applicable to the SRX1500) |
+
+Verified models: [Juniper SRX1500, JUNOS 19.4R3.11](juniper-srx1500.md).
 
 Until a hypothesis is verified for a model, NetScanner keeps treating the
 behaviour as an assumption. For H1, a port mapped by number is stored as

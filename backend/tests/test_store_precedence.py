@@ -25,7 +25,7 @@ from .store_lab import Lab
 
 H = timedelta(hours=1)
 PATTERN = "sysdescr-model-pattern"
-PARTIAL = {"outcome": "partial", "error_category": "transport-error"}
+PARTIAL = {"outcome": "partial", "error_category": "transport_error"}
 
 
 @pytest.fixture

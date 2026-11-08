@@ -43,6 +43,39 @@ Do not paste, upload or open raw captures, walks, configurations or logs in
 an AI assistant, including the one used to develop this project. Give it
 only the anonymised version.
 
+### Claude Code deny rules for `local/` and their limits
+
+`.claude/settings.json` denies Claude Code access to `local/`, the ignored
+folder that holds the capture kit and anonymised captures under review. The
+rules follow the Claude Code permissions documentation
+(<https://code.claude.com/docs/en/permissions>, checked 2026-11-08).
+`/local/**` is anchored at the repository root, and `./local/**` at the
+current directory.
+
+| Tool | Covered by | How far |
+|------|------------|---------|
+| Read | `Read(/local)`, `Read(/local/**)`, `Read(./local/**)` | Blocked |
+| Grep, Glob | The same `Read` rules | Best effort, per the documentation. `Grep(path)` and `Glob(path)` rules are accepted but never matched, so no specific rule is possible. A search of a parent folder may still return files under `local/` |
+| Edit, Write, NotebookEdit | `Edit(/local)`, `Edit(/local/**)`, `Edit(./local/**)`; `Read` deny also blocks Edit and Write | Blocked. `Write(path)` rules are never matched; `Edit` covers Write and NotebookEdit |
+| Bash, PowerShell | `Read` and `Edit` rules for the file commands Claude Code recognises (`cat`, `head`, `tail`, `sed`, `tee`) and for redirect targets; `Bash(...)` and `PowerShell(...)` rules for commands with an argument starting with `local` or `./local`, or a path containing `NetScanner/local` | Partial: these rules match the command text only |
+
+**What stays uncovered.** A tool rule cannot stop an arbitrary shell command
+from reaching `local/`. A Bash or PowerShell rule matches the text of the
+command, not the files a process opens. These still reach the folder:
+- commands that read without naming it, such as `grep -r pattern .` from the
+  repository root;
+- any program that opens files itself, such as a Python or Node script, a
+  `docker run -v` mount, an archiver or `git`;
+- other spellings of the same path, such as variables, globs, an absolute
+  path without `NetScanner`, or `sh -c` with a quoted command.
+
+Only the operating-system sandbox of Claude Code enforces this for every
+process, and it is not available on native Windows, where this project is
+developed. The deny rules are therefore a safety net, not a boundary. The
+rule that matters stays the one above: raw data lives outside the repository
+folder and is never given to AI tools. `local/` holds only the capture kit
+and anonymised data waiting for review.
+
 ## Automated checks
 
 `scripts/check_confidentiality.py` and gitleaks run as a pre-commit hook

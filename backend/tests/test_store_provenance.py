@@ -141,7 +141,7 @@ async def test_same_query_stored_twice_is_idempotent(lab: Lab, engine: AsyncEngi
     device = await _device(lab)
     base = await lab.query("IF-MIB::ifTable", device=device)
     ext = await lab.query(
-        "IF-MIB::ifXTable", device=device, outcome="partial", error_category="transport-error", at=H
+        "IF-MIB::ifXTable", device=device, outcome="partial", error_category="transport_error", at=H
     )
     await lab.store.store_if_table(
         base, device, [{"if_index": 1, "if_descr": "a", "if_speed": 100}]
@@ -209,7 +209,7 @@ async def test_confirmed_absence_is_carried_like_a_value(lab: Lab) -> None:
         [{"if_index": 1, "if_name": "lab-port-1", "if_alias": None, "if_high_speed": 1000}],
     )
     partial = await lab.query(
-        "IF-MIB::ifXTable", device=device, at=H, outcome="partial", error_category="transport-error"
+        "IF-MIB::ifXTable", device=device, at=H, outcome="partial", error_category="transport_error"
     )
     await lab.store.store_if_xtable(partial, device, [{"if_index": 1, "if_name": "lab-port-1b"}])
     row = _iface(await lab.rows(interfaces))
@@ -225,7 +225,7 @@ async def test_confirmed_absence_is_carried_like_a_value(lab: Lab) -> None:
 async def test_fresh_row_from_a_partial_query(lab: Lab) -> None:
     device = await _device(lab)
     partial = await lab.query(
-        "IF-MIB::ifXTable", device=device, outcome="partial", error_category="transport-error"
+        "IF-MIB::ifXTable", device=device, outcome="partial", error_category="transport_error"
     )
     # if_alias reported absent by a partial query is not a confirmed absence.
     await lab.store.store_if_xtable(
@@ -247,7 +247,7 @@ async def test_fresh_row_from_a_partial_query(lab: Lab) -> None:
 
     # Still not retrieved by a later partial query: the entry stays as it is.
     later = await lab.query(
-        "IF-MIB::ifXTable", device=device, at=H, outcome="partial", error_category="transport-error"
+        "IF-MIB::ifXTable", device=device, at=H, outcome="partial", error_category="transport_error"
     )
     await lab.store.store_if_xtable(
         later, device, [{"if_index": 1, "if_name": "lab-port-1", "if_high_speed": 1000}]
@@ -265,7 +265,7 @@ async def test_partial_query_keeps_field_not_retrieved_with_its_own_query(lab: L
         [{"if_index": 1, "if_name": "lab-port-1", "if_alias": "uplink", "if_high_speed": 1000}],
     )
     partial = await lab.query(
-        "IF-MIB::ifXTable", device=device, at=H, outcome="partial", error_category="transport-error"
+        "IF-MIB::ifXTable", device=device, at=H, outcome="partial", error_category="transport_error"
     )
     # The walk stopped after the names: alias and speed were not retrieved,
     # and a value reported absent by a partial query does not count as absence.
@@ -290,7 +290,7 @@ async def test_partial_query_keeps_field_not_retrieved_with_its_own_query(lab: L
         device=device,
         at=2 * H,
         outcome="partial",
-        error_category="transport-error",
+        error_category="transport_error",
     )
     await lab.store.store_if_xtable(
         second_partial, device, [{"if_index": 1, "if_name": "lab-port-1c", "if_high_speed": 2000}]

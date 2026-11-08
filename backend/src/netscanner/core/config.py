@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # Data not confirmed within this period is reported as stale, never deleted (RF-30).
     stale_after: timedelta = Field(default=timedelta(days=7), gt=timedelta(0))
 
+    # SNMP load limits (design D5 of add-snmp-client-and-lab). The mechanism is
+    # decided; the values are lab defaults to review after the first real run.
+    snmp_timeout: float = Field(default=3.0, gt=0, le=60)
+    snmp_retries: int = Field(default=1, ge=0, le=5)
+    snmp_max_repetitions: int = Field(default=25, ge=1, le=50)
+    snmp_max_rows: int = Field(default=200_000, ge=1, le=10_000_000)
+    snmp_max_devices: int = Field(default=8, ge=1, le=256)
+
     @field_validator("secret_key", "db_password")
     @classmethod
     def _reject_empty_and_placeholder(cls, value: SecretStr) -> SecretStr:
