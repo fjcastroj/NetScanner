@@ -50,7 +50,7 @@ jobs:
         run: >-
           uv run --no-project --python 3.12
           --with-requirements ../lab/snmpsim/requirements.txt
-          snmpsim-command-responder --help > /dev/null
+          snmpsim-command-responder --version > /dev/null
       - run: uv run ruff check ..
       - run: uv run ruff format --check ..
       - run: uv run pytest -v
