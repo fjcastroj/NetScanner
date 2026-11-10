@@ -22,15 +22,16 @@ Nothing is installed on the monitored devices.
 | Service     | What it does                                                    |
 |-------------|-----------------------------------------------------------------|
 | `web`       | React interface (Spanish and English) served by nginx; proxies `/api` |
-| `api`       | FastAPI backend (`GET /api/health`)                             |
-| `collector` | SNMP collector process (idle placeholder for now)               |
+| `api`       | FastAPI backend: settings, credential, runs, devices (`/api`)   |
+| `collector` | SNMP collector: claims and runs pending discovery runs          |
 | `migrate`   | One-shot step that runs the database migrations                 |
 | `db`        | PostgreSQL                                                      |
 
 Code lives in `backend/` (Python package `netscanner`), `frontend/`,
 `scripts/` (repository checks and the stack test) and `docs/`. Specifications
 and design decisions are in `openspec/`. How every stored datum records its
-origin is described in [docs/provenance.md](docs/provenance.md).
+origin is described in [docs/provenance.md](docs/provenance.md); scope
+enforcement and credential handling in [docs/architecture.md](docs/architecture.md).
 
 ## Prerequisites
 
@@ -93,10 +94,12 @@ npm run dev                   # proxies /api to http://127.0.0.1:8000
 
 ### Stack test
 
-Builds and runs the whole stack with throwaway secrets, its own Compose
-project name and a free host port, checks health, exposure, non-root
-containers, recovery after a database outage and data persistence, and
-removes everything at the end:
+Builds and runs the whole stack together with the SNMP lab
+(`docker-compose.lab.yml`), with throwaway secrets, its own Compose project
+name and a free host port. It checks health, exposure, non-root containers,
+recovery after a database outage and data persistence, then discovers the
+lab through the API until the run completes and the three lab devices are
+listed, and removes everything at the end:
 
 ```sh
 python scripts/stack_test.py

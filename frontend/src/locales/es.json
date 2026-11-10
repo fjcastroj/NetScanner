@@ -5,7 +5,9 @@
   },
   "nav": {
     "label": "Navegación principal",
-    "empty": "Las secciones aparecerán aquí."
+    "settings": "Configuración",
+    "discovery": "Descubrimiento",
+    "devices": "Dispositivos"
   },
   "language": {
     "label": "Idioma",
@@ -18,7 +20,167 @@
     "available": "Servicio disponible",
     "unavailable": "Servicio no disponible"
   },
-  "home": {
-    "placeholder": "Todavía no hay ninguna red configurada."
+  "lab": {
+    "label": "Aviso de modo laboratorio",
+    "title": "Modo laboratorio sin autenticación.",
+    "text": "Solo se pueden consultar los rangos del laboratorio hasta que exista la autenticación del administrador. No expongas esta aplicación fuera del equipo local."
+  },
+  "common": {
+    "loading": "Cargando…"
+  },
+  "errors": {
+    "load": "No se han podido cargar los datos. Inténtalo más tarde.",
+    "save": "No se ha podido guardar el cambio. Inténtalo más tarde."
+  },
+  "settings": {
+    "discovery": "Configuración del descubrimiento",
+    "seeds": "Semillas",
+    "allowed_ranges": "Rangos permitidos",
+    "exclusions": "Rangos excluidos",
+    "max_depth": "Profundidad máxima",
+    "max_candidates": "Máximo de candidatos",
+    "max_devices": "Máximo de dispositivos consultados",
+    "max_datagrams": "Máximo de datagramas SNMP",
+    "follow_ip_mac": "Usar las entradas IP-MAC como candidatos",
+    "one_per_line": "Una dirección o rango por línea.",
+    "ceiling": "Límite del servidor: {{value}}",
+    "line": "línea {{n}}",
+    "save": "Guardar configuración",
+    "saved": "Configuración guardada.",
+    "invalid": "Algunos valores se han rechazado; mira los mensajes junto a cada campo."
+  },
+  "credential": {
+    "title": "Credencial SNMP",
+    "configured": "Hay una credencial configurada: versión {{version}}, actualizada {{time}}.",
+    "unusable": "No se puede usar con la clave secreta actual; vuelve a introducirla.",
+    "none": "No hay ninguna credencial configurada.",
+    "version": "Versión SNMP",
+    "community": "Comunidad",
+    "user": "Usuario",
+    "level": "Nivel de seguridad",
+    "auth_protocol": "Protocolo de autenticación",
+    "auth_key": "Clave de autenticación",
+    "priv_protocol": "Protocolo de privacidad",
+    "priv_key": "Clave de privacidad",
+    "save": "Sustituir credencial",
+    "saved": "Credencial sustituida."
+  },
+  "discovery": {
+    "start": "Iniciar descubrimiento",
+    "in_progress": "Hay una ejecución en curso; el estado se actualiza cada pocos segundos.",
+    "already_running": "Ya hay una ejecución de descubrimiento en curso.",
+    "field": {
+      "seeds": "Semillas",
+      "credential": "Credencial"
+    },
+    "run": "Ejecución {{id}}",
+    "candidates": "Candidatos registrados",
+    "devices": "Dispositivos alcanzados",
+    "new_devices": "Dispositivos nuevos",
+    "queries": "Consultas SNMP",
+    "reasons": "Candidatos no consultados o sin respuesta",
+    "limits_reached": "Límites alcanzados: {{limits}}",
+    "history": "Ejecuciones anteriores",
+    "none": "Todavía no hay ninguna ejecución.",
+    "id": "Ejecución",
+    "requested": "Solicitada",
+    "finished": "Terminada",
+    "result": "Resultado"
+  },
+  "runs": {
+    "pending": "Pendiente",
+    "running": "En curso",
+    "completed": "Completada",
+    "failed": "Fallida",
+    "interrupted": "Interrumpida"
+  },
+  "run_errors": {
+    "empty_scope": "sin rangos permitidos",
+    "scope_not_allowed": "rango fuera del laboratorio",
+    "limits_not_allowed": "límites no permitidos",
+    "credential_unreadable": "credencial ilegible",
+    "database_error": "error de base de datos",
+    "internal_error": "error interno"
+  },
+  "reasons": {
+    "out_of_scope": "Fuera del ámbito",
+    "excluded": "Excluida",
+    "special_address": "Dirección especial",
+    "already_known": "Ya conocida en esta ejecución",
+    "max_depth": "Más allá de la profundidad máxima",
+    "limit_reached": "Límite alcanzado",
+    "no_response": "Sin respuesta",
+    "auth_failed": "Autenticación fallida",
+    "query_error": "Error de consulta"
+  },
+  "devices": {
+    "name": "Nombre",
+    "vendor": "Fabricante",
+    "model": "Modelo",
+    "software_version": "Versión de software",
+    "management_address": "Dirección de gestión",
+    "interfaces": "Interfaces",
+    "first_seen": "Visto por primera vez",
+    "last_seen": "Visto por última vez",
+    "none": "Todavía no se ha descubierto ningún dispositivo.",
+    "range": "{{from}}–{{to}} de {{total}}",
+    "previous": "Anterior",
+    "next": "Siguiente"
+  },
+  "device": {
+    "groups": {
+      "system": "Sistema",
+      "chassis": "Chasis",
+      "vendor": "Fabricante",
+      "model": "Modelo y versión"
+    },
+    "not_collected": "Todavía no se ha recogido.",
+    "not_found": "Dispositivo no encontrado.",
+    "back": "Volver a la lista de dispositivos",
+    "title": "Dispositivo {{id}}",
+    "addresses": "Direcciones ({{count}})",
+    "address": "Dirección",
+    "address_source": "Origen",
+    "source": {
+      "address_table": "Tabla de direcciones",
+      "management": "Dirección de gestión"
+    },
+    "interfaces": "Interfaces ({{count}})"
+  },
+  "fields": {
+    "sys_name": "Nombre",
+    "sys_descr": "Descripción",
+    "sys_object_id": "Identificador de objeto",
+    "sys_uptime": "Tiempo activo (centésimas de segundo)",
+    "enterprise_number": "Número de empresa",
+    "chassis_id_subtype": "Subtipo del identificador de chasis",
+    "chassis_id": "Identificador de chasis",
+    "vendor_name": "Fabricante",
+    "vendor_status": "Estado en el registro",
+    "model": "Modelo",
+    "software_version": "Versión de software",
+    "if_index": "ifIndex",
+    "if_descr": "Descripción",
+    "if_name": "Nombre",
+    "if_type": "Tipo",
+    "speed_bps": "Velocidad (bit/s)",
+    "admin_status": "Estado administrativo",
+    "oper_status": "Estado operativo",
+    "phys_address": "Dirección física"
+  },
+  "provenance": {
+    "unknown": "no obtenido",
+    "observed": "observado",
+    "inferred": "inferido",
+    "stale": "obsoleto, visto por última vez {{time}}",
+    "stale_short": "obsoleto",
+    "details": "origen",
+    "method": "Método",
+    "no_method": "leído directamente de la tabla",
+    "source": "Tabla de origen",
+    "query": "Consulta",
+    "query_ref": "consulta {{query}} de la ejecución {{run}}",
+    "seen_at": "Visto por última vez",
+    "evidence": "Evidencia"
   }
 }

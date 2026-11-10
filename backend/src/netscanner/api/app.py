@@ -2,7 +2,11 @@
 # Copyright 2026 Francisco Javier Castro Jiménez
 # Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
 # Computer Engineering, Universidad Internacional de La Rioja (UNIR).
-"""FastAPI application: health endpoint and generic error responses."""
+"""FastAPI application: health, the routes of design D10 and generic error responses.
+
+Request validation errors give the field and the reason only, never the
+submitted value (design D10).
+"""
 
 from __future__ import annotations
 
@@ -11,11 +15,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, OperationalError
 
+from netscanner.api.common import Services, problems_response
+from netscanner.api.routes import router
 from netscanner.core.config import Settings
 from netscanner.core.db import classify_db_error, create_engine, ping
+from netscanner.credential_store import CredentialService
+from netscanner.scope import DiscoveryCeilings
+from netscanner.store.service import Store
 
 log = logging.getLogger("netscanner.api")
 
@@ -28,6 +38,11 @@ def create_app(settings: Settings) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = create_engine(settings)
         app.state.database_ok = None  # unknown until the first check
+        app.state.services = Services(
+            store=Store.from_settings(app.state.engine, settings),
+            credentials=CredentialService(app.state.engine, settings.secret_key.get_secret_value()),
+            ceilings=DiscoveryCeilings.from_settings(settings),
+        )
         try:
             yield
         finally:
@@ -55,6 +70,18 @@ def create_app(settings: Settings) -> FastAPI:
             log.info("database available again")
         state.database_ok = True
         return JSONResponse(HEALTH_OK)
+
+    app.include_router(router)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+        problems = []
+        for error in exc.errors():
+            location = [str(p) for p in error.get("loc", ())]
+            if location and location[0] in ("body", "query", "path"):
+                location = location[1:]
+            problems.append((".".join(location) or "request", str(error.get("msg", "invalid"))))
+        return problems_response(problems)
 
     @app.exception_handler(OperationalError)
     @app.exception_handler(DBAPIError)

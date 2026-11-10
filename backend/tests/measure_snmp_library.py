@@ -23,11 +23,12 @@ import statistics
 import subprocess
 import time
 
-from netscanner.snmp import TABLES, SnmpLimits, SnmpV2cCredential, TableSpec, Target
+from netscanner.snmp import TABLES, SnmpLimits, TableSpec
 from netscanner.snmp.pysnmp_client import PySnmpClient
 from netscanner.snmp.tables import format_oid
 
 from .netsnmp_client import parse_output
+from .snmp_targets import RESOLVER, authorized
 
 RUNS = 5
 REPETITIONS = 25
@@ -59,8 +60,8 @@ def reference_rows(spec: TableSpec, host: str, community: str) -> dict:
 
 
 async def main(host: str, community: str) -> None:
-    client = PySnmpClient(SnmpLimits(timeout=5, retries=1, max_repetitions=REPETITIONS))
-    target = Target(host, SnmpV2cCredential(community=community))
+    client = PySnmpClient(RESOLVER, SnmpLimits(timeout=5, retries=1, max_repetitions=REPETITIONS))
+    target = authorized(host, 161, community, allowed=("10.99.0.0/24",))
 
     print("| Table | PySNMP outcome | Rows | Values equal to snmpbulkwalk |")
     print("|-------|----------------|------|------------------------------|")

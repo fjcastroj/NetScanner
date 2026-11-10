@@ -6,8 +6,9 @@
 
 Standard library only and a fixed seed: running it again gives byte-identical
 files. The switches take their host MAC and IP addresses from srx-01's
-ipNetToPhysicalTable and srx-01's own MAC address for the uplink, so later
-changes can locate hosts and infer links across the lab. Everything else is
+ipNetToPhysicalTable and srx-01's own MAC address for the uplink and for
+lab-sw-01's IP-MAC entry of srx-01, so later changes can locate hosts and
+infer links across the lab. Everything else is
 invented and every synthetic device says so in its sysDescr.
 
 Usage: python lab/generate_synthetic.py [--data DIR]
@@ -36,6 +37,7 @@ MASK_24 = str(ipaddress.IPv4Network("0.0.0.0/24").netmask)
 
 SW1_HOSTS = 30
 SW2_HOSTS = 5
+SILENT_MAC = "020000aa0900"  # invented: the silent address has no device behind it
 
 
 # --- Reading srx-01 ---------------------------------------------------------
@@ -271,7 +273,27 @@ def lab_sw_01(srx: Srx, hosts: list[Host], rng: random.Random) -> Records:
         key = f"{fdb}.{mac_index(mac)}"
         r.add(f"{fdb_base}.2.{key}", "2", port)
         r.add(f"{fdb_base}.3.{key}", "2", status)
+
+    # A small ipNetToPhysicalTable on irb.0, so that IP-MAC following reaches
+    # lab addresses: srx-01 (its management address and MAC), lab-sw-02 (its
+    # internal MAC) and the silent address (an invented MAC). No random values,
+    # so the rest of the file does not change with it.
+    for ip, mac in sw1_ip_mac(srx):
+        key = f"{irb.if_index}.1.4.{ip}"
+        r.add(f"1.3.6.1.2.1.4.35.1.4.{key}", "4x", mac)
+        r.add(f"1.3.6.1.2.1.4.35.1.6.{key}", "2", 3)  # dynamic
+        r.add(f"1.3.6.1.2.1.4.35.1.7.{key}", "2", 1)  # reachable
     return r
+
+
+def sw1_ip_mac(srx: Srx) -> list[tuple[str, str]]:
+    """IP-MAC entries of lab-sw-01, in address order."""
+    entries = [
+        (srx.management_address, srx.mac),
+        (SW2_ADDRESS, "020000aa0200"),
+        (SILENT_ADDRESS, SILENT_MAC),
+    ]
+    return sorted(entries, key=lambda e: ipaddress.IPv4Address(e[0]))
 
 
 # --- lab-sw-02 --------------------------------------------------------------

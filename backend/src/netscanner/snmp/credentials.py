@@ -22,7 +22,14 @@ SecurityLevel = Literal["authNoPriv", "authPriv"]
 
 
 class CredentialError(ValueError):
-    """An unsupported or malformed credential; the message names fields only."""
+    """An unsupported or malformed credential; the message names fields only.
+
+    ``problems`` holds one ``(field, error type)`` pair per problem, for the API.
+    """
+
+    def __init__(self, message: str, problems: list[tuple[str, str]] | None = None) -> None:
+        super().__init__(message)
+        self.problems = problems or []
 
 
 class _Credential(BaseModel):
@@ -84,10 +91,11 @@ def parse_credential(
     try:
         return _Wrapper.model_validate({"credential": value}).credential
     except ValidationError as exc:
-        parts = sorted(
+        problems = sorted(
             {
-                f"{'.'.join(str(p) for p in e['loc'][1:]) or 'credential'}: {e['type']}"
+                (".".join(str(p) for p in e["loc"][1:]) or "credential", e["type"])
                 for e in exc.errors(include_input=False, include_url=False, include_context=False)
             }
         )
-        raise CredentialError(f"invalid SNMP credential: {'; '.join(parts)}") from None
+        parts = [f"{field}: {kind}" for field, kind in problems]
+        raise CredentialError(f"invalid SNMP credential: {'; '.join(parts)}", problems) from None

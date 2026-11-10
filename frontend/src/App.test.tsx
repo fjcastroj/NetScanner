@@ -15,8 +15,15 @@ import en from './locales/en.json'
 import es from './locales/es.json'
 import { HEALTH_URL } from './useApiStatus'
 
+// Health answers with ``result``; every other API path answers an empty page,
+// with a new Response per call (a body can be read only once).
 function mockHealth(result: Response | Error) {
-  const fetchMock = vi.fn(() => (result instanceof Error ? Promise.reject(result) : Promise.resolve(result)))
+  const fetchMock = vi.fn((url: string) => {
+    if (url === HEALTH_URL) {
+      return result instanceof Error ? Promise.reject(result) : Promise.resolve(result.clone())
+    }
+    return Promise.resolve(new Response('{"total":0,"limit":20,"offset":0,"items":[]}', { status: 200 }))
+  })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
@@ -48,12 +55,14 @@ afterEach(() => {
 })
 
 describe('application shell', () => {
-  it('shows the name, the navigation area and the language selector', async () => {
+  it('shows the name, the navigation, the lab banner and the language selector', async () => {
     mockHealth(new Response('{}', { status: 200 }))
     await renderApp()
     expect(screen.getByRole('heading', { name: es.app.name })).toBeTruthy()
     expect(screen.getByRole('navigation', { name: es.nav.label })).toBeTruthy()
     expect(screen.getByRole('combobox')).toBeTruthy()
+    expect(screen.getByRole('note', { name: es.lab.label })).toBeTruthy()
+    expect(screen.getByRole('link', { name: es.nav.devices })).toBeTruthy()
   })
 })
 
@@ -84,16 +93,16 @@ describe('languages', () => {
   it('switches all visible text without reloading and remembers the choice', async () => {
     mockHealth(new Response('{}', { status: 200 }))
     await renderApp()
-    expect(screen.getByText(es.home.placeholder)).toBeTruthy()
+    expect(screen.getByText(es.lab.title)).toBeTruthy()
 
     await act(async () => {
       fireEvent.change(screen.getByRole('combobox'), { target: { value: 'en' } })
     })
 
-    expect(screen.getByText(en.home.placeholder)).toBeTruthy()
-    expect(screen.getByText(en.nav.empty)).toBeTruthy()
+    expect(screen.getByText(en.lab.title)).toBeTruthy()
+    expect(screen.getByRole('link', { name: en.nav.discovery })).toBeTruthy()
     expect(screen.getByRole('status').textContent).toBe(en.status.available)
-    expect(screen.queryByText(es.home.placeholder)).toBeNull()
+    expect(screen.queryByText(es.lab.title)).toBeNull()
     expect(localStorage.getItem(STORAGE_KEY)).toBe('en')
     expect(document.documentElement.lang).toBe('en')
   })
@@ -103,7 +112,7 @@ describe('languages', () => {
     setBrowserLanguages(['en-GB', 'en'])
     const i18n = await renderApp()
     expect(i18n.resolvedLanguage).toBe('en')
-    expect(screen.getByText(en.home.placeholder)).toBeTruthy()
+    expect(screen.getByText(en.lab.title)).toBeTruthy()
   })
 
   it('falls back to Spanish for an unsupported browser language', async () => {
@@ -111,7 +120,7 @@ describe('languages', () => {
     setBrowserLanguages(['fr-FR'])
     const i18n = await renderApp()
     expect(i18n.resolvedLanguage).toBe('es')
-    expect(screen.getByText(es.home.placeholder)).toBeTruthy()
+    expect(screen.getByText(es.lab.title)).toBeTruthy()
   })
 
   it('prefers the stored choice over the browser language', async () => {

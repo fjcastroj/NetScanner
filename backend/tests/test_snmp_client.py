@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from pysnmp.proto import rfc1902
 
 from netscanner.core.config import EXIT_CONFIG_ERROR
 from netscanner.core.logging_setup import MASK, configure_logging
@@ -25,14 +26,16 @@ from netscanner.snmp import (
     SnmpLimits,
     SnmpV2cCredential,
     SnmpV3Credential,
-    Target,
     get_table,
     parse_credential,
 )
-from netscanner.snmp.walker import Response, ResponseKind
+from netscanner.snmp.walker import Endpoint, Response, ResponseKind
 
 from .conftest import Canaries, SnmpLab, make_settings, run_module
 from .snmp_agent import Behaviour, ScriptedAgent, table
+from .snmp_targets import RESOLVER, authorized
+
+LAB = ("10.99.0.0/24",)
 
 SNMP_PACKAGE = Path(__file__).resolve().parents[1] / "src" / "netscanner" / "snmp"
 IF_TABLE = get_table("IF-MIB::ifTable")
@@ -134,7 +137,8 @@ def test_credentials_and_targets_never_show_secrets() -> None:
     canary = "canary-" + secrets.token_hex(8)
     v2 = SnmpV2cCredential(community=canary)
     v3_cred = parse_credential(v3(auth_key=canary + "-a", priv_key=canary + "-p"))
-    for obj in (v2, v3_cred, Target("10.99.0.11", v2), Target("10.99.0.11", v3_cred)):
+    targets = [authorized("10.99.0.11", 161, c, allowed=LAB) for c in (v2, v3_cred)]
+    for obj in (v2, v3_cred, *targets):
         assert canary not in str(obj) and canary not in repr(obj)
 
 
@@ -202,11 +206,11 @@ async def test_code_using_the_interface_runs_with_a_fake() -> None:
             return Response(ResponseKind.OK, [((*IF_TABLE.oid, 1, 1), 1), ((2,), 0)])
 
     @asynccontextmanager
-    async def fake(target: Target, limits: SnmpLimits) -> AsyncIterator[FakeTransport]:
+    async def fake(endpoint: Endpoint, limits: SnmpLimits) -> AsyncIterator[FakeTransport]:
         yield FakeTransport()
 
-    result = await BoundedClient(fake).walk_table(
-        Target("10.99.0.11", SnmpV2cCredential(community="x")), IF_TABLE
+    result = await BoundedClient(fake, RESOLVER).walk_table(
+        authorized("10.99.0.11", 161, "x", allowed=LAB), IF_TABLE
     )
     assert (result.outcome, result.rows) == ("ok", {(1,): {"ifIndex": 1}})
 
@@ -231,18 +235,24 @@ def _text(result: object) -> str:
     ids=["timeout", "error-status", "malformed", "mid-walk-timeout"],
 )
 async def test_community_canary_absent_in_every_failure(
-    behaviour: Behaviour, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+    behaviour: Behaviour,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    request: pytest.FixtureRequest,
 ) -> None:
     from netscanner.snmp.pysnmp_client import PySnmpClient
 
     canary = "canary-community-" + secrets.token_hex(8)
-    data = table("1.3.6.1.2.1.2.2.1", {2: [b"port"] * 30})
+    data = table("1.3.6.1.2.1.2.2.1", {2: [rfc1902.OctetString("port")] * 30})
     caplog.set_level(logging.DEBUG)
     async with ScriptedAgent(data, community=canary, behaviour=behaviour) as agent:
-        target = Target(agent.host, SnmpV2cCredential(community=canary), port=agent.port)
-        result = await PySnmpClient(FAST).walk_table(target, IF_TABLE)
-        get_result = await PySnmpClient(FAST).get(target, [IF_TABLE.column_oid("ifDescr")])
-    assert result.outcome != "ok"
+        target = authorized(agent.host, agent.port, canary)
+        result = await PySnmpClient(RESOLVER, FAST).walk_table(target, IF_TABLE)
+        get_result = await PySnmpClient(RESOLVER, FAST).get(
+            target, [IF_TABLE.column_oid("ifDescr")]
+        )
+    expected = {"timeout": "no_response", "error-status": "error", "malformed": "no_response"}
+    assert result.outcome == expected.get(request.node.callspec.id, "partial")
     texts = [_text(result), _text(get_result), str(target), caplog.text, *capsys.readouterr()]
     assert all(canary not in t for t in texts)
 
@@ -268,10 +278,9 @@ async def test_v3_keys_absent_on_reports(
     }
     values[wrong] = canary if wrong == "auth_key" else "nobody"
     caplog.set_level(logging.DEBUG)
-    target = Target(snmp_lab.host, SnmpV3Credential(**values), port=snmp_lab.port, context="srx-01")
-    result = await PySnmpClient(SnmpLimits(timeout=1, retries=0)).walk_table(
-        target, get_table("SNMPv2-MIB::system")
-    )
+    target = authorized(snmp_lab.host, snmp_lab.port, SnmpV3Credential(**values))
+    client = PySnmpClient(RESOLVER, SnmpLimits(timeout=1, retries=0), v3_context="srx-01")
+    result = await client.walk_table(target, get_table("SNMPv2-MIB::system"))
     expected = "v3_report:wrongDigest" if wrong == "auth_key" else "v3_report:unknownUserName"
     assert (result.outcome, result.error_category) == ("error", expected)
     texts = [_text(result), str(target), caplog.text, *capsys.readouterr()]
@@ -296,11 +305,11 @@ async def test_secrets_masked_in_logs_while_in_use(capsys: pytest.CaptureFixture
             return Response(ResponseKind.TIMEOUT)
 
     @asynccontextmanager
-    async def leaky(target: Target, limits: SnmpLimits) -> AsyncIterator[LoggingTransport]:
+    async def leaky(endpoint: Endpoint, limits: SnmpLimits) -> AsyncIterator[LoggingTransport]:
         yield LoggingTransport()
 
-    target = Target("10.99.0.11", SnmpV2cCredential(community=canary))
-    await BoundedClient(leaky).walk_table(target, IF_TABLE)
+    target = authorized("10.99.0.11", 161, canary, allowed=LAB)
+    await BoundedClient(leaky, RESOLVER).walk_table(target, IF_TABLE)
     err = capsys.readouterr().err
     assert "library said: bad community " + MASK in err and canary not in err
     log.warning("after the query: %s", canary)  # no longer in use, no longer masked

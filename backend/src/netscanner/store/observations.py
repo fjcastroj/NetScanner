@@ -30,6 +30,7 @@ from pydantic import (
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from netscanner import vendors
 from netscanner.store import registry
 from netscanner.store.errors import StoreError
 from netscanner.store.evidence import QueryInput, RecordInput, build_evidence
@@ -400,7 +401,10 @@ async def infer_model_from_sysdescr(conn: AsyncConnection, device_id: int) -> bo
     """Infer model and version from fragments of the stored ``sysDescr``.
 
     The evidence references the stored description and keeps only the matched
-    fragments (design D10). Without a match no inferred value is produced.
+    fragments (design D10). The generic pattern goes first; only when it finds
+    nothing, a vendor rule selected by the enterprise number of ``sysObjectID``
+    is tried (``netscanner.vendors``, RNF-08). Without a match no inferred
+    value is produced.
 
     Precedence is per field (design D9): the inference never changes a field
     whose effective origin is observed, so an observed model keeps its value,
@@ -409,7 +413,7 @@ async def infer_model_from_sysdescr(conn: AsyncConnection, device_id: int) -> bo
     await observation_lock(conn)
     row = (
         await conn.execute(
-            select(devices.c.sys_descr, devices.c.system_last_query_id)
+            select(devices.c.sys_descr, devices.c.enterprise_number, devices.c.system_last_query_id)
             .where(devices.c.id == device_id)
             # Locked: precedence is decided on the current row.
             .with_for_update()
@@ -417,13 +421,20 @@ async def infer_model_from_sysdescr(conn: AsyncConnection, device_id: int) -> bo
     ).one()
     if row.sys_descr is None:
         return False
+    method = "sysdescr-model-pattern"
     found = match_model_fragments(row.sys_descr)
     if found is None:
-        return False
+        rule = vendors.infer_model(row.enterprise_number, row.sys_descr)
+        if rule is None:
+            return False
+        method, match = rule
+        found = {"model": match.model, **match.fragments()}
+        if match.version is not None:
+            found["version"] = match.version
     q = await get_query(conn, row.system_last_query_id)
     snapshot = {k: v for k, v in found.items() if k.endswith("_fragment")}
     evidence = build_evidence(
-        "sysdescr-model-pattern",
+        method,
         Origin.INFERRED,
         [_query_ref(q), RecordInput(table="devices", id=device_id, snapshot=snapshot)],
     )
@@ -431,13 +442,7 @@ async def infer_model_from_sysdescr(conn: AsyncConnection, device_id: int) -> bo
     values = {"model": found["model"]}
     if "version" in found:
         values["software_version"] = found["version"]
-    update_ = GroupUpdate(
-        MODEL,
-        values,
-        Origin.INFERRED,
-        "sysdescr-model-pattern",
-        evidence,
-    )
+    update_ = GroupUpdate(MODEL, values, Origin.INFERRED, method, evidence)
     return await apply_updates(conn, devices, device_id, [update_], q)
 
 

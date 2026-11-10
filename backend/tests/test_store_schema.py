@@ -19,7 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from netscanner.core.db import create_engine
 from netscanner.migrate import alembic_config, upgrade
-from netscanner.store.models import collection_runs, devices, interfaces, metadata, snmp_queries
+from netscanner.store.models import (
+    collection_runs,
+    devices,
+    interfaces,
+    metadata,
+    run_devices,
+    snmp_queries,
+)
 
 from .conftest import TestDatabase, fresh_database
 
@@ -33,15 +40,23 @@ async def _tables(engine: AsyncEngine) -> set[str]:
         return set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
 
 
+# Alembic cannot compare expression indexes; this one is checked by behaviour
+# in test_one_active_discovery_run.
+EXPRESSION_INDEXES = {"uq_collection_runs_one_active_discovery"}
+
+
+def _comparable(obj, name, type_, reflected, compare_to) -> bool:
+    return not (type_ == "index" and name in EXPRESSION_INDEXES)
+
+
 def test_migrated_schema_matches_models(test_db: TestDatabase) -> None:
     async def diff(settings) -> list:
         engine = create_engine(settings)
         try:
             async with engine.connect() as conn:
+                opts = {"compare_type": True, "include_object": _comparable}
                 return await conn.run_sync(
-                    lambda c: compare_metadata(
-                        MigrationContext.configure(c, opts={"compare_type": True}), metadata
-                    )
+                    lambda c: compare_metadata(MigrationContext.configure(c, opts=opts), metadata)
                 )
         finally:
             await engine.dispose()
@@ -238,3 +253,67 @@ async def test_query_outcome_rules(engine: AsyncEngine) -> None:
                 await conn.execute(
                     snmp_queries.update().where(snmp_queries.c.id == ids["q1"]).values(**values)
                 )
+
+
+async def test_one_active_discovery_run(engine: AsyncEngine) -> None:
+    values = {"status": "pending", "requested_at": T0, "parameters": {}}
+    async with engine.begin() as conn:
+        await conn.execute(insert(collection_runs).values(kind="discovery", **values))
+        # Polling runs are not discovery runs and may run alongside.
+        await conn.execute(insert(collection_runs).values(kind="polling", **values))
+    for kind in ("discovery", "rediscovery"):
+        async with engine.begin() as conn:
+            with pytest.raises(IntegrityError, match="uq_collection_runs_one_active_discovery"):
+                await conn.execute(insert(collection_runs).values(kind=kind, **values))
+    async with engine.begin() as conn:
+        await conn.execute(
+            collection_runs.update()
+            .where(collection_runs.c.kind == "discovery")
+            .values(status="interrupted", finished_at=T0)
+        )
+        await conn.execute(insert(collection_runs).values(kind="discovery", **values))
+
+
+async def test_discovery_settings_has_its_single_row(engine: AsyncEngine) -> None:
+    async with engine.begin() as conn:
+        row = (await conn.execute(text("SELECT * FROM discovery_settings"))).one()
+        assert (row.id, row.seeds, row.allowed_ranges, row.max_depth, row.follow_ip_mac) == (
+            1,
+            [],
+            [],
+            1,
+            False,
+        )
+        with pytest.raises(IntegrityError, match="ck_discovery_settings_single_row"):
+            await conn.execute(
+                text(
+                    "INSERT INTO discovery_settings"
+                    " (id, max_depth, max_candidates, max_devices, max_datagrams)"
+                    " VALUES (2, 1, 1, 1, 1)"
+                )
+            )
+
+
+@pytest.mark.parametrize(
+    ("values", "constraint"),
+    [
+        ({"skip_reason": "bored"}, "ck_run_devices_skip_reason"),
+        ({"skip_reason": "no_response", "device_id": "dev"}, "ck_run_devices_device_or_reason"),
+    ],
+)
+async def test_run_device_reason_rules(engine: AsyncEngine, values: dict, constraint: str) -> None:
+    ids = await _base(engine)
+    if values.get("device_id") == "dev":
+        values = {**values, "device_id": ids["dev1"]}
+    async with engine.begin() as conn:
+        with pytest.raises(IntegrityError, match=constraint):
+            await conn.execute(
+                insert(run_devices).values(
+                    run_id=ids["run"],
+                    target_address="10.99.0.11",
+                    reached_via="seed",
+                    depth=0,
+                    answered=False,
+                    **values,
+                )
+            )

@@ -101,7 +101,8 @@ async def test_invalid_transitions_rejected(store: Store) -> None:
 async def test_runs_left_running_are_interrupted(
     store: Store, engine: AsyncEngine, clock: Clock
 ) -> None:
-    left = [await store.create_run("discovery", {}) for _ in range(2)]
+    # One discovery run at a time; a polling run may be running alongside it.
+    left = [await store.create_run(kind, {}) for kind in ("discovery", "polling")]
     for run in left:
         await store.start_run(run)
     done = await store.create_run("polling", {})
@@ -262,6 +263,8 @@ async def test_second_run_records_every_known_device(store: Store, engine: Async
                 answered=True,
                 device_id=device,
             )
+        await store.start_run(run)
+        await store.finish_run(run)
     async with engine.connect() as conn:
         counts = await conn.execute(
             select(run_devices.c.run_id, func.count())
@@ -300,3 +303,145 @@ async def test_candidate_without_answer_recorded(store: Store, engine: AsyncEngi
         1,
         q,
     )
+
+
+# --- add-discovery-and-basic-inventory: parameters and candidate reasons ----
+
+
+async def test_parameters_of_earlier_runs_still_parse(store: Store, engine: AsyncEngine) -> None:
+    earlier = {
+        "seeds": ["10.99.0.13"],
+        "allowed_ranges": ["10.99.0.0/24"],
+        "max_depth": 1,
+        "snapshot": False,
+    }
+    async with engine.begin() as conn:
+        run = await conn.scalar(
+            insert(collection_runs)
+            .values(kind="discovery", status="pending", requested_at=T0, parameters=earlier)
+            .returning(collection_runs.c.id)
+        )
+        params = await runs.run_parameters(conn, run)
+    assert (params.follow_ip_mac, params.limits) == (False, None)
+    assert [str(s) for s in params.seeds] == ["10.99.0.13"]
+
+
+async def test_new_parameters_stored(store: Store, engine: AsyncEngine) -> None:
+    limits = {"max_candidates": 10, "max_devices": 5, "max_datagrams": 900}
+    run = await store.create_run("discovery", {"follow_ip_mac": True, "limits": limits})
+    stored = (await run_row(engine, run))["parameters"]
+    assert (stored["follow_ip_mac"], stored["limits"]) == (True, limits)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {
+            "limits": {
+                "max_candidates": 10,
+                "max_devices": 5,
+                "max_datagrams": 900,
+                "max_threads": 4,
+            }
+        },
+        {"limits": {"max_candidates": 0, "max_devices": 5, "max_datagrams": 900}},
+        {"follow_lldp": True},
+    ],
+)
+async def test_unknown_or_invalid_parameters_still_rejected(store: Store, params: dict) -> None:
+    with pytest.raises(StoreError, match="invalid run parameters"):
+        await store.create_run("discovery", params)
+
+
+async def _reached(engine: AsyncEngine, run: int, address: str) -> dict:
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                select(run_devices).where(
+                    run_devices.c.run_id == run, run_devices.c.target_address == address
+                )
+            )
+        ).one()
+    return dict(row._mapping)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "out_of_scope",
+        "excluded",
+        "special_address",
+        "already_known",
+        "max_depth",
+        "limit_reached",
+        "no_response",
+        "auth_failed",
+        "query_error",
+    ],
+)
+async def test_every_reason_of_the_vocabulary_is_stored(
+    store: Store, engine: AsyncEngine, reason: str
+) -> None:
+    run = await store.create_run("discovery", {})
+    await store.record_run_device(run, "10.99.0.40", "lldp", 1, skip_reason=reason)
+    assert (await _reached(engine, run, "10.99.0.40"))["skip_reason"] == reason
+
+
+async def test_unknown_reason_or_reason_with_device_rejected(
+    store: Store, engine: AsyncEngine
+) -> None:
+    run = await store.create_run("discovery", {})
+    with pytest.raises(StoreError, match="unknown reason"):
+        await store.record_run_device(run, "10.99.0.40", "lldp", 1, skip_reason="bored")
+    device = await new_device(engine)
+    with pytest.raises(StoreError, match="either a device or a reason"):
+        await store.record_run_device(
+            run, "10.99.0.40", "lldp", 1, skip_reason="no_response", device_id=device
+        )
+
+
+async def test_querying_an_address_clears_its_reason(store: Store, engine: AsyncEngine) -> None:
+    run = await store.create_run("discovery", {})
+    found_from = await new_device(engine)
+    await store.record_run_device(
+        run, "10.99.0.40", "lldp", 1, skip_reason="limit_reached", found_from_device_id=found_from
+    )
+    q = await store.record_query(
+        query(run, target_address="10.99.0.40", mib_object="SNMPv2-MIB::system")
+    )
+    await store.record_run_device(run, "10.99.0.40", "lldp", 1, first_query_id=q)
+    row = await _reached(engine, run, "10.99.0.40")
+    assert (row["skip_reason"], row["first_query_id"], row["found_from_device_id"]) == (
+        None,
+        q,
+        found_from,
+    )
+    # A later reason (the system group timed out) is recorded again.
+    await store.record_run_device(run, "10.99.0.40", "lldp", 1, skip_reason="no_response")
+    assert (await _reached(engine, run, "10.99.0.40"))["skip_reason"] == "no_response"
+
+
+async def test_first_record_keeps_how_and_from_where(store: Store, engine: AsyncEngine) -> None:
+    run = await store.create_run("discovery", {})
+    first, second = await new_device(engine), await new_device(engine)
+    await store.record_run_device(run, "10.99.0.3", "lldp", 1, found_from_device_id=first)
+    # Found again later from another device: the first way and source stay,
+    # and a record without a query or reason leaves the reason as it was.
+    await store.record_run_device(
+        run, "10.99.0.3", "ip-mac", 1, found_from_device_id=second, skip_reason="already_known"
+    )
+    await store.record_run_device(run, "10.99.0.3", "cdp", 1)
+    row = await _reached(engine, run, "10.99.0.3")
+    assert (row["reached_via"], row["found_from_device_id"], row["skip_reason"]) == (
+        "lldp",
+        first,
+        "already_known",
+    )
+
+
+async def test_assigning_a_device_clears_the_reason(store: Store, engine: AsyncEngine) -> None:
+    run = await store.create_run("discovery", {})
+    await store.record_run_device(run, "10.99.0.11", "seed", 0, skip_reason="no_response")
+    await store.assign_device(run, "10.99.0.11", await new_device(engine))
+    row = await _reached(engine, run, "10.99.0.11")
+    assert row["skip_reason"] is None and row["device_id"] is not None

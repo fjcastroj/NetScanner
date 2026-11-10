@@ -39,9 +39,18 @@ from pysnmp.hlapi.v3arch.asyncio import (
 from pysnmp.proto import errind, rfc1902, rfc1905
 
 from netscanner.snmp.credentials import SnmpV2cCredential, SnmpV3Credential
-from netscanner.snmp.results import SnmpException, SnmpValue, Target
+from netscanner.snmp.results import SnmpException, SnmpValue
 from netscanner.snmp.tables import Oid, format_oid
-from netscanner.snmp.walker import BoundedClient, Response, ResponseKind, SnmpLimits, Transport
+from netscanner.snmp.walker import (
+    BoundedClient,
+    CredentialSource,
+    Endpoint,
+    EndpointFor,
+    Response,
+    ResponseKind,
+    SnmpLimits,
+    Transport,
+)
 from netscanner.store.registry import SNMP_ERROR_STATUSES
 
 AUTH = {
@@ -152,13 +161,15 @@ class _PySnmpTransport(Transport):
 
 
 @asynccontextmanager
-async def pysnmp_transport(target: Target, limits: SnmpLimits) -> AsyncIterator[Transport]:
+async def pysnmp_transport(endpoint: Endpoint, limits: SnmpLimits) -> AsyncIterator[Transport]:
     engine = SnmpEngine()
     try:
+        # retries=0: the walker repeats timed-out requests, so it can count
+        # every datagram (add-discovery-and-basic-inventory, design D6).
         udp = await UdpTransportTarget.create(
-            (target.address, target.port), timeout=limits.timeout, retries=limits.retries
+            (endpoint.host, endpoint.port), timeout=limits.timeout, retries=0
         )
-        yield _PySnmpTransport(engine, _auth_data(target.credential), udp, target.context)
+        yield _PySnmpTransport(engine, _auth_data(endpoint.credential), udp, endpoint.context)
     finally:
         engine.close_dispatcher()
 
@@ -166,5 +177,12 @@ async def pysnmp_transport(target: Target, limits: SnmpLimits) -> AsyncIterator[
 class PySnmpClient(BoundedClient):
     """The application's SNMP client."""
 
-    def __init__(self, limits: SnmpLimits | None = None) -> None:
-        super().__init__(pysnmp_transport, limits)
+    def __init__(
+        self,
+        resolver: CredentialSource,
+        limits: SnmpLimits | None = None,
+        endpoint_for: EndpointFor | None = None,
+        v3_context: str = "",
+    ) -> None:
+        # Forwarded positionally: production code never passes these two.
+        super().__init__(pysnmp_transport, resolver, limits, endpoint_for, v3_context)

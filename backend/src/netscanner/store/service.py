@@ -20,11 +20,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from netscanner.core.config import Settings
-from netscanner.store import evaluation, identity, observations, reading, runs
+from netscanner.store import configuration, evaluation, identity, observations, reading, runs
 from netscanner.store.identity import Chassis, Resolution
+from netscanner.store.models import devices
 from netscanner.store.observations import OBSERVATION_LOCK, StoreResult
-from netscanner.store.reading import DeviceView, RecordView
-from netscanner.store.runs import QueryRecord, ReachedVia, RunKind, RunParameters
+from netscanner.store.reading import DeviceSummary, DeviceView, RecordView
+from netscanner.store.runs import QueryRecord, ReachedVia, RunKind, RunParameters, SkipReason
 
 Address = str | IPv4Address | IPv6Address
 
@@ -58,6 +59,11 @@ class Store:
     async def start_run(self, run_id: int) -> None:
         async with self.engine.begin() as conn:
             await runs.start_run(conn, run_id, self.clock())
+
+    async def claim_pending_run(self) -> int | None:
+        """Start the oldest pending discovery run, skipping runs locked by others."""
+        async with self.engine.begin() as conn:
+            return await runs.claim_pending_run(conn, self.clock())
 
     async def finish_run(
         self,
@@ -112,6 +118,8 @@ class Store:
         first_query_id: int | None = None,
         answered: bool = False,
         device_id: int | None = None,
+        skip_reason: SkipReason | None = None,
+        found_from_device_id: int | None = None,
     ) -> int:
         async with self.engine.begin() as conn:
             return await runs.record_run_device(
@@ -123,6 +131,8 @@ class Store:
                 first_query_id=first_query_id,
                 answered=answered,
                 device_id=device_id,
+                skip_reason=skip_reason,
+                found_from_device_id=found_from_device_id,
             )
 
     async def assign_device(self, run_id: int, target_address: Address, device_id: int) -> None:
@@ -204,6 +214,37 @@ class Store:
 
     async def read_ip_mac(self, device_id: int) -> list[RecordView]:
         return await self._read(reading.read_ip_mac, device_id)
+
+    async def list_devices(self, limit: int, offset: int) -> tuple[int, list[DeviceSummary]]:
+        async with self.engine.connect() as conn:
+            return await reading.list_devices(conn, limit, offset, self.clock(), self.stale_after)
+
+    async def device_exists(self, device_id: int) -> bool:
+        async with self.engine.connect() as conn:
+            found = await conn.scalar(select(devices.c.id).where(devices.c.id == device_id))
+        return found is not None
+
+    async def list_runs(self, limit: int, offset: int) -> tuple[int, list[dict[str, Any]]]:
+        async with self.engine.connect() as conn:
+            return await runs.list_runs(conn, limit, offset)
+
+    async def get_run(self, run_id: int) -> dict[str, Any] | None:
+        async with self.engine.connect() as conn:
+            return await runs.get_run(conn, run_id)
+
+    async def count_queries(self, run_id: int) -> int:
+        async with self.engine.connect() as conn:
+            return await runs.count_queries(conn, run_id)
+
+    # --- Settings -----------------------------------------------------------
+
+    async def read_discovery_settings(self) -> dict[str, Any]:
+        async with self.engine.connect() as conn:
+            return await configuration.read_discovery_settings(conn)
+
+    async def save_discovery_settings(self, values: dict[str, Any]) -> None:
+        async with self.engine.begin() as conn:
+            await configuration.save_discovery_settings(conn, values, self.clock())
 
     async def run_report(self, run_id: int) -> dict:
         async with self.engine.connect() as conn:

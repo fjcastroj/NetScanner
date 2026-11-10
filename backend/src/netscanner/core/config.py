@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "NETSCANNER_"
 PLACEHOLDER = "change-me"
+SECRET_KEY_MIN_LENGTH = 32
 EXIT_CONFIG_ERROR = 2
 
 
@@ -45,6 +46,8 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
 
     collector_check_interval: float = Field(default=10.0, gt=0, le=3600)
+    # Seconds between claims of a pending discovery run (design D7).
+    collector_poll_interval: float = Field(default=2.0, gt=0, le=3600)
     # Touched on every collector loop; the container health check reads its age.
     collector_heartbeat_file: Path | None = None
 
@@ -61,6 +64,13 @@ class Settings(BaseSettings):
     snmp_max_rows: int = Field(default=200_000, ge=1, le=10_000_000)
     snmp_max_devices: int = Field(default=8, ge=1, le=256)
 
+    # Ceilings of the discovery limits (design D6 of add-discovery-and-basic-inventory).
+    # Values: Hypothesis, from the lab; reviewed after the first real run.
+    discovery_max_depth: int = Field(default=5, ge=0, le=32)
+    discovery_max_candidates: int = Field(default=4096, ge=1, le=1_000_000)
+    discovery_max_devices: int = Field(default=256, ge=1, le=100_000)
+    discovery_max_datagrams: int = Field(default=50000, ge=1, le=100_000_000)
+
     @field_validator("secret_key", "db_password")
     @classmethod
     def _reject_empty_and_placeholder(cls, value: SecretStr) -> SecretStr:
@@ -69,6 +79,16 @@ class Settings(BaseSettings):
             raise ValueError("must not be empty")
         if raw.lower() == PLACEHOLDER:
             raise ValueError(f"still has the placeholder '{PLACEHOLDER}'; it must be changed")
+        return value
+
+    @field_validator("secret_key")
+    @classmethod
+    def _secret_key_length(cls, value: SecretStr) -> SecretStr:
+        # It derives the credential encryption key (design D5 of
+        # add-discovery-and-basic-inventory). Length is a minimum, not proof of
+        # entropy: the key must be generated, not chosen.
+        if len(value.get_secret_value()) < SECRET_KEY_MIN_LENGTH:
+            raise ValueError(f"must be at least {SECRET_KEY_MIN_LENGTH} characters long")
         return value
 
     def secret_values(self) -> list[str]:

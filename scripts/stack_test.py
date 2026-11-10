@@ -8,6 +8,12 @@ Uses throwaway random secrets, its own Compose project name and a free host
 port, so it never touches a stack already running. The stack and its volumes
 are removed at the end, even when a check fails.
 
+The stack runs with the lab override file, as the snmp-lab spec delivers it
+(``-f docker-compose.yml -f docker-compose.lab.yml``), and ends with a
+discovery of the lab through the API: settings and credential saved, a run
+until completed and the three lab devices in the list
+(add-discovery-and-basic-inventory, task 8.1).
+
 Usage: python scripts/stack_test.py
 """
 
@@ -33,6 +39,21 @@ HEALTH_OK = {"status": "ok", "database": "ok"}
 HEALTH_DEGRADED = {"status": "degraded", "database": "unavailable"}
 RECOVERY_SECONDS = 30
 MARKER_TABLE = "stack_test_marker"
+COMPOSE_FILES = ("docker-compose.yml", "docker-compose.lab.yml")
+# Lab data only (lab/manifest.yaml): the lab community and addresses.
+LAB_COMMUNITY = "netscanner-lab"
+LAB_SETTINGS = {
+    "seeds": ["10.99.0.13", "10.99.0.2", "10.99.0.9"],
+    "allowed_ranges": ["10.99.0.0/24"],
+    "exclusions": [],
+    "max_depth": 1,
+    "follow_ip_mac": False,
+    "max_candidates": 4096,
+    "max_devices": 256,
+    "max_datagrams": 50000,
+}
+LAB_DEVICES = {"10.99.0.13", "10.99.0.2", "10.99.0.3"}
+RUN_SECONDS = 180
 
 
 class StackTestError(Exception):
@@ -54,7 +75,8 @@ class Stack:
         self.project = project
         self.env_file = env_file
         self.port = port
-        self.health_url = f"http://127.0.0.1:{port}/api/health"
+        self.base_url = f"http://127.0.0.1:{port}"
+        self.health_url = f"{self.base_url}/api/health"
 
     def compose(self, *args: str, check: bool = True, capture: bool = False) -> str:
         cmd = [
@@ -62,7 +84,7 @@ class Stack:
             "--project-name", self.project,
             "--project-directory", str(ROOT),
             "--env-file", str(self.env_file),
-            "-f", str(ROOT / "docker-compose.yml"),
+            *(arg for name in COMPOSE_FILES for arg in ("-f", str(ROOT / name))),
             *args,
         ]  # fmt: skip
         result = subprocess.run(
@@ -93,6 +115,24 @@ class Stack:
                 return exc.code, None
         except (urllib.error.URLError, OSError):
             return 0, None
+
+    def api(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+        """A JSON request to the API through the web port."""
+        data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(  # noqa: S310 - local test URL
+            self.base_url + path,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            try:
+                return exc.code, json.loads(exc.read())
+            except ValueError:
+                return exc.code, {}
 
     def wait_health(self, status: int, body: dict, timeout: float) -> float:
         start = time.monotonic()
@@ -222,6 +262,51 @@ def run_checks(stack: Stack) -> None:
     check(stored == marker, "marker row preserved")
     stack.psql(f"DROP TABLE {MARKER_TABLE}")
     check(stack.health() == (200, HEALTH_OK), "health 200 after restart")
+
+    lab_discovery(stack)
+
+
+def lab_discovery(stack: Stack) -> None:
+    step("lab discovery through the API")
+    status, body = stack.api("GET", "/api/status")
+    check(status == 200 and body.get("lab_mode") is True, "status reports lab mode")
+    status, _ = stack.api("PUT", "/api/settings/discovery", LAB_SETTINGS)
+    check(status == 200, "discovery settings saved")
+    status, body = stack.api(
+        "PUT", "/api/settings/credential", {"version": "2c", "community": LAB_COMMUNITY}
+    )
+    check(status == 200 and body.get("usable") is True, "credential saved and usable")
+    check(LAB_COMMUNITY not in json.dumps(body), "credential response has no secret")
+    status, run = stack.api("POST", "/api/runs")
+    check(status == 201 and run.get("status") == "pending", f"run {run.get('id')} created")
+    status, _ = stack.api("POST", "/api/runs")
+    check(status == 409, "a second run is refused while the first is active")
+    started = time.monotonic()
+    while time.monotonic() - started < RUN_SECONDS:
+        status, run = stack.api("GET", f"/api/runs/{run['id']}")
+        if run.get("status") not in ("pending", "running"):
+            break
+        time.sleep(2)
+    took = time.monotonic() - started
+    progress = run.get("progress") or {}
+    check(run.get("status") == "completed", f"run completed in {took:.0f} s")
+    check(
+        progress.get("reasons") == {"no_response": 1, "out_of_scope": 1},
+        f"candidates per reason {progress.get('reasons')}",
+    )
+    status, devices = stack.api("GET", "/api/devices")
+    addresses = {d.get("management_address") for d in devices.get("items", [])}
+    check(
+        status == 200 and devices.get("total") == 3 and addresses == LAB_DEVICES,
+        "the device list returns the three lab devices",
+    )
+    summary = (run.get("report") or {}).get("summary") or {}
+    print(
+        f"    lab run: {progress.get('candidates')} candidates, {progress.get('devices')} "
+        f"devices, {progress.get('queries')} queries, {summary.get('reported_datagrams')} "
+        f"datagrams, limits reached {summary.get('limits_reached')}",
+        flush=True,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

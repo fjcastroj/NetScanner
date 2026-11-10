@@ -22,9 +22,18 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
 from netscanner.snmp.credentials import SnmpV2cCredential
-from netscanner.snmp.results import SnmpException, SnmpValue, Target
+from netscanner.snmp.results import SnmpException, SnmpValue
 from netscanner.snmp.tables import Oid, format_oid, parse_oid
-from netscanner.snmp.walker import BoundedClient, Response, ResponseKind, SnmpLimits, Transport
+from netscanner.snmp.walker import (
+    BoundedClient,
+    CredentialSource,
+    Endpoint,
+    EndpointFor,
+    Response,
+    ResponseKind,
+    SnmpLimits,
+    Transport,
+)
 
 AUTH = {
     "SHA": "SHA",
@@ -92,12 +101,13 @@ def parse_output(text: str) -> list[tuple[Oid, SnmpValue | SnmpException]]:
 
 
 class NetSnmpTransport(Transport):
-    def __init__(self, target: Target, limits: SnmpLimits) -> None:
-        self.target, self.limits = target, limits
+    def __init__(self, endpoint: Endpoint, limits: SnmpLimits) -> None:
+        self.endpoint, self.limits = endpoint, limits
 
     def _common(self) -> list[str]:
-        c = self.target.credential
-        args = ["-On", "-Ox", "-Ot", "-t", str(self.limits.timeout), "-r", str(self.limits.retries)]
+        c = self.endpoint.credential
+        # -r 0: the walker performs the retries and counts every datagram.
+        args = ["-On", "-Ox", "-Ot", "-t", str(self.limits.timeout), "-r", "0"]
         if isinstance(c, SnmpV2cCredential):
             args += ["-v2c", "-c", c.community.get_secret_value()]
         else:
@@ -114,9 +124,9 @@ class NetSnmpTransport(Transport):
             ]
             if c.priv_protocol and c.priv_key:
                 args += ["-x", PRIV[c.priv_protocol], "-X", c.priv_key.get_secret_value()]
-            if self.target.context:
-                args += ["-n", self.target.context]
-        return [*args, f"udp:{self.target.address}:{self.target.port}"]
+            if self.endpoint.context:
+                args += ["-n", self.endpoint.context]
+        return [*args, f"udp:{self.endpoint.host}:{self.endpoint.port}"]
 
     async def _run(self, tool: str, extra: list[str], oids: Sequence[Oid]) -> Response:
         process = await asyncio.create_subprocess_exec(
@@ -151,10 +161,16 @@ class NetSnmpTransport(Transport):
 
 
 @asynccontextmanager
-async def netsnmp_transport(target: Target, limits: SnmpLimits) -> AsyncIterator[Transport]:
-    yield NetSnmpTransport(target, limits)
+async def netsnmp_transport(endpoint: Endpoint, limits: SnmpLimits) -> AsyncIterator[Transport]:
+    yield NetSnmpTransport(endpoint, limits)
 
 
 class NetSnmpClient(BoundedClient):
-    def __init__(self, limits: SnmpLimits | None = None) -> None:
-        super().__init__(netsnmp_transport, limits)
+    def __init__(
+        self,
+        resolver: CredentialSource,
+        limits: SnmpLimits | None = None,
+        endpoint_for: EndpointFor | None = None,
+        v3_context: str = "",
+    ) -> None:
+        super().__init__(netsnmp_transport, resolver, limits, endpoint_for, v3_context)

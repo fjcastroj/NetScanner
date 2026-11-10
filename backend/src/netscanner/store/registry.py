@@ -138,6 +138,16 @@ _METHODS = (
         "Assumes sysDescr labels them with these words; free text with no standard format.",
     ),
     Method(
+        "juniper-sysdescr-pattern",
+        Origin.INFERRED,
+        1,
+        "Juniper model and JUNOS version from the sysDescr format of the srx-01 capture "
+        "('<model> internet router, kernel JUNOS <version>'), for sysObjectID in enterprise "
+        "2636 when ENTITY-MIB and the generic pattern give nothing.",
+        "Assumes other Juniper devices describe themselves like the one captured device; "
+        "any other format infers nothing.",
+    ),
+    Method(
         "chassis-id",
         Origin.INFERRED,
         1,
@@ -243,6 +253,13 @@ ERROR_CATEGORIES: frozenset[str] = frozenset(
         "transport_error",
         "non_increasing_oid",
         "row_limit",
+        # Datagram budget of a run (design D6 of add-discovery-and-basic-inventory).
+        "request_limit",
+        # Reasons a discovery run fails (design D7 of add-discovery-and-basic-inventory).
+        "empty_scope",
+        "scope_not_allowed",
+        "limits_not_allowed",
+        "credential_unreadable",
         "validation_error",
         "database_error",
         "internal_error",

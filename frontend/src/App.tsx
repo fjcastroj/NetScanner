@@ -5,10 +5,17 @@
  * Computer Engineering, Universidad Internacional de La Rioja (UNIR).
  */
 
+// Router and layout (design D11). The lab mode banner belongs to the layout,
+// so no page can be shown without it.
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router'
 
 import { LANGUAGES, type Language } from './i18n'
+import { DevicePage } from './pages/DevicePage'
+import { DevicesPage } from './pages/DevicesPage'
+import { DiscoveryPage } from './pages/DiscoveryPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { useApiStatus } from './useApiStatus'
 
 function LanguageSelector() {
@@ -41,7 +48,22 @@ function StatusIndicator() {
   )
 }
 
-export default function App() {
+export function LabBanner() {
+  const { t } = useTranslation()
+  return (
+    <div className="lab-banner" role="note" aria-label={t('lab.label')}>
+      <strong>{t('lab.title')}</strong> {t('lab.text')}
+    </div>
+  )
+}
+
+const PAGES = [
+  ['/settings', 'nav.settings'],
+  ['/discovery', 'nav.discovery'],
+  ['/devices', 'nav.devices'],
+] as const
+
+export function Layout() {
   const { t, i18n } = useTranslation()
 
   useEffect(() => {
@@ -61,12 +83,42 @@ export default function App() {
           <LanguageSelector />
         </div>
       </header>
+      <LabBanner />
       <nav className="nav" aria-label={t('nav.label')}>
-        <p className="nav-empty">{t('nav.empty')}</p>
+        <ul>
+          {PAGES.map(([path, label]) => (
+            <li key={path}>
+              <NavLink to={path}>{t(label)}</NavLink>
+            </li>
+          ))}
+        </ul>
       </nav>
       <main className="main">
-        <p>{t('home.placeholder')}</p>
+        <Outlet />
       </main>
     </div>
+  )
+}
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<Navigate to="/discovery" replace />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="discovery" element={<DiscoveryPage />} />
+        <Route path="devices" element={<DevicesPage />} />
+        <Route path="devices/:id" element={<DevicePage />} />
+        <Route path="*" element={<Navigate to="/discovery" replace />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   )
 }

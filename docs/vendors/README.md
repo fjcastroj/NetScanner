@@ -45,6 +45,10 @@ listed; every other model stays pending until it is captured.
 
 Verified models: [Juniper SRX1500, JUNOS 19.4R3.11](juniper-srx1500.md).
 
+Vendor rules (`netscanner.vendors`) exist only for captured formats: Juniper
+has the `sysDescr` model rule described in [juniper-srx1500.md](juniper-srx1500.md).
+Fortinet has no capture and therefore no rule.
+
 Until a hypothesis is verified for a model, NetScanner keeps treating the
 behaviour as an assumption. For H1, a port mapped by number is stored as
 inferred with the method `lldp-portnum-equals-ifindex` (see

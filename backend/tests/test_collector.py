@@ -2,7 +2,7 @@
 # Copyright 2026 Francisco Javier Castro Jiménez
 # Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
 # Computer Engineering, Universidad Internacional de La Rioja (UNIR).
-"""Collector placeholder: start, idle, reconnect with backoff, clean stop."""
+"""Collector: start, idle, reconnect with backoff, clean stop; claiming runs (design D7)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import pytest
 
 from netscanner.collector import healthcheck
 from netscanner.collector.service import BACKOFF_INITIAL, BACKOFF_MAX, next_backoff, run_collector
-from netscanner.core.config import ENV_PREFIX
+from netscanner.core.config import ENV_PREFIX, Settings
 from netscanner.core.logging_setup import configure_logging
 
 from .conftest import REFUSED, Canaries, TestDatabase, db_settings, make_settings
@@ -47,10 +47,17 @@ def test_backoff_doubles_up_to_thirty_seconds() -> None:
 
 @pytest.mark.db
 async def test_collector_idles_and_stops_cleanly(
-    capsys: pytest.CaptureFixture[str], canaries: Canaries, test_db: TestDatabase, tmp_path: Path
+    capsys: pytest.CaptureFixture[str],
+    canaries: Canaries,
+    test_db: TestDatabase,
+    store_settings: Settings,
+    tmp_path: Path,
 ) -> None:
     heartbeat = tmp_path / "heartbeat"
-    settings = db_settings(canaries, test_db, collector_heartbeat_file=heartbeat)
+    # The collector reads runs, so it needs the migrated database (Compose runs migrate first).
+    settings = db_settings(
+        canaries, test_db, db_name=store_settings.db_name, collector_heartbeat_file=heartbeat
+    )
     configure_logging("INFO", settings.secret_values())
     stop = asyncio.Event()
     task = asyncio.create_task(run_collector(settings, stop))
@@ -78,12 +85,20 @@ async def test_collector_retries_when_database_refuses(
 
 @pytest.mark.db
 async def test_collector_logs_loss_and_reconnects(
-    capsys: pytest.CaptureFixture[str], canaries: Canaries, test_db: TestDatabase
+    capsys: pytest.CaptureFixture[str],
+    canaries: Canaries,
+    test_db: TestDatabase,
+    store_settings: Settings,
 ) -> None:
     proxy = TcpProxy(test_db.host, test_db.port)
     proxy.start()
     settings = db_settings(
-        canaries, test_db, db_host="127.0.0.1", db_port=proxy.port, collector_check_interval=0.2
+        canaries,
+        test_db,
+        db_name=store_settings.db_name,
+        db_host="127.0.0.1",
+        db_port=proxy.port,
+        collector_check_interval=0.2,
     )
     configure_logging("INFO", settings.secret_values())
     stop = asyncio.Event()
