@@ -79,6 +79,12 @@ async def run_report(conn: AsyncConnection, run_id: int) -> dict[str, Any]:
             ),
         )
     )
+    reasons = await conn.execute(
+        select(reached.c.skip_reason, func.count())
+        .where(reached.c.run_id == run_id, reached.c.skip_reason.is_not(None))
+        .group_by(reached.c.skip_reason)
+        .order_by(reached.c.skip_reason)
+    )
     vendor = func.coalesce(devices.c.vendor_name, "unknown")
     outcomes = await conn.execute(
         select(vendor, snmp_queries.c.mib_object, snmp_queries.c.outcome, func.count())
@@ -99,6 +105,9 @@ async def run_report(conn: AsyncConnection, run_id: int) -> dict[str, Any]:
         "without_answer": totals[1],
         "devices": totals[2],
         "new_devices": new_devices,
+        # Candidates not queried or not answering, per reason (device-discovery spec).
+        "reasons": dict(reasons.all()),
+        "summary": run.summary,
         "outcomes": [
             {"vendor": v, "mib_object": m, "outcome": o, "count": n} for v, m, o, n in outcomes
         ],

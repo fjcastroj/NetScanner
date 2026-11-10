@@ -18,18 +18,19 @@ from collections.abc import Callable
 import pytest
 from pysnmp.proto import rfc1902, rfc1905
 
+from netscanner.scope import AuthorizedTarget
 from netscanner.snmp import (
+    BudgetPool,
     SnmpClient,
     SnmpLimits,
-    SnmpV2cCredential,
     SnmpV3Credential,
-    Target,
     get_table,
 )
 from netscanner.snmp.tables import parse_oid
 
 from .conftest import LAB_DATA, SnmpLab
 from .snmp_agent import Behaviour, ScriptedAgent, table
+from .snmp_targets import RESOLVER, authorized
 
 ClientFactory = Callable[[SnmpLimits], SnmpClient]
 FAST = SnmpLimits(timeout=0.3, retries=0, max_repetitions=10)
@@ -51,11 +52,11 @@ def make_client(request: pytest.FixtureRequest) -> ClientFactory:
     if request.param == "pysnmp":
         from netscanner.snmp.pysnmp_client import PySnmpClient
 
-        return PySnmpClient
+        return lambda limits=None, **kw: PySnmpClient(RESOLVER, limits, **kw)
     if request.param == "netsnmp":
         from .netsnmp_client import NetSnmpClient
 
-        return NetSnmpClient
+        return lambda limits=None, **kw: NetSnmpClient(RESOLVER, limits, **kw)
     raise AssertionError(request.param)
 
 
@@ -68,8 +69,8 @@ def if_rows(n: int, *, columns: tuple[int, ...] = (1, 2)) -> dict:
     return table("1.3.6.1.2.1.2.2.1", {c: values[c] for c in columns})
 
 
-def target(agent: ScriptedAgent) -> Target:
-    return Target(agent.host, SnmpV2cCredential(community=agent.community), port=agent.port)
+def target(agent: ScriptedAgent) -> AuthorizedTarget:
+    return authorized(agent.host, agent.port, agent.community)
 
 
 # --- Classification (design D4) ---------------------------------------------
@@ -283,8 +284,8 @@ async def test_column_not_reached_in_a_partial_walk_is_not_reported(
 # --- Against the snmpsim lab (design D10) -----------------------------------
 
 
-def lab_target(lab: SnmpLab, device: str) -> Target:
-    return Target(lab.host, SnmpV2cCredential(community=device), port=lab.port)
+def lab_target(lab: SnmpLab, device: str) -> AuthorizedTarget:
+    return authorized(lab.host, lab.port, device)
 
 
 def rows_in_data(device: str, table_oid: str) -> int:
@@ -338,8 +339,10 @@ async def test_lab_snmpv3_authpriv(make_client: ClientFactory, snmp_lab: SnmpLab
         priv_protocol="AES-128",
         priv_key=snmp_lab.v3_priv_key,
     )
-    lab_v3 = Target(snmp_lab.host, credential, port=snmp_lab.port, context="lab-sw-01")
-    result = await make_client(LAB).walk_table(lab_v3, get_table("SNMPv2-MIB::system"))
+    lab_v3 = authorized(snmp_lab.host, snmp_lab.port, credential)
+    # snmpsim serves SNMPv3 only under the context named after the data file (D3).
+    client = make_client(LAB, v3_context="lab-sw-01")
+    result = await client.walk_table(lab_v3, get_table("SNMPv2-MIB::system"))
     assert result.outcome == "ok" and result.rows[(0,)]["sysName"] == b"lab-sw-01"
 
 
@@ -377,3 +380,149 @@ async def test_lab_switches_answer(make_client: ClientFactory, snmp_lab: SnmpLab
         "empty",
         "noSuchInstance",
     )  # snmpsim cannot say noSuchObject
+
+
+# --- Retries and datagram budget (add-discovery-and-basic-inventory, D6) -----
+
+
+@pytest.mark.parametrize(("timeout", "retries"), [(0.3, 0), (0.3, 2)])
+async def test_silent_agent_gets_retries_plus_one_datagrams(
+    make_client: ClientFactory, timeout: float, retries: int
+) -> None:
+    limits = SnmpLimits(timeout=timeout, retries=retries, max_repetitions=10)
+    async with ScriptedAgent(if_rows(5), behaviour=Behaviour(stop_after=0)) as agent:
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        result = await make_client(limits).get(target(agent), [parse_oid("1.3.6.1.2.1.2.2.1.2.1")])
+        elapsed = loop.time() - start
+    assert result.outcome == "no_response"
+    assert agent.requests == retries + 1 == result.request_count
+    expected = timeout * (retries + 1)
+    assert expected * 0.9 <= elapsed <= expected + 1.0, elapsed
+
+
+async def test_datagrams_counted_with_a_retry_and_the_probe(make_client: ClientFactory) -> None:
+    limits = SnmpLimits(timeout=0.3, retries=1, max_repetitions=10)
+    lldp_columns = {LLDP_REM.column_oid(c) for c in LLDP_REM.columns}
+    behaviour = Behaviour(ignore_first=1)  # the first request is lost and retried
+    async with ScriptedAgent(if_rows(2), object_types=lldp_columns, behaviour=behaviour) as agent:
+        result = await make_client(limits).walk_table(target(agent), LLDP_REM)
+    assert (result.outcome, result.indicator) == ("empty", "noSuchInstance")
+    # GETBULK lost + GETBULK retried + probe GET.
+    assert result.request_count == 3 == agent.requests
+
+
+@pytest.mark.parametrize(("retries", "budget"), [(0, 1), (1, 3)])
+async def test_walk_not_started_without_budget_for_the_probe(
+    make_client: ClientFactory, retries: int, budget: int
+) -> None:
+    limits = SnmpLimits(timeout=0.3, retries=retries, max_repetitions=10)
+    async with ScriptedAgent(if_rows(5)) as agent:
+        result = await make_client(limits).walk_table(target(agent), IF_TABLE, budget=budget)
+    assert (result.sent, result.outcome, result.request_count, agent.requests) == (
+        False,
+        None,
+        0,
+        0,
+    )
+
+
+async def test_budget_ends_a_walk_with_rows_as_partial(make_client: ClientFactory) -> None:
+    limits = SnmpLimits(timeout=0.3, retries=0, max_repetitions=5)
+    async with ScriptedAgent(if_rows(40, columns=(2,))) as agent:
+        result = await make_client(limits).walk_table(target(agent), IF_TABLE, budget=3)
+    assert (result.outcome, result.error_category, result.complete) == (
+        "partial",
+        "request_limit",
+        False,
+    )
+    assert (result.request_count, agent.requests, result.row_count) == (3, 3, 15)
+
+
+async def test_a_request_is_never_cut_between_attempts(make_client: ClientFactory) -> None:
+    # Retries 1: every request needs 2 datagrams covered, though an answered one
+    # uses 1. Budget 5: four requests are sent (1 + 1 + 1 + 1); the fifth would
+    # need 2 with 1 left, so it is not sent rather than cut after one attempt.
+    limits = SnmpLimits(timeout=0.3, retries=1, max_repetitions=5)
+    async with ScriptedAgent(if_rows(40, columns=(2,))) as agent:
+        result = await make_client(limits).walk_table(target(agent), IF_TABLE, budget=5)
+    assert (result.outcome, result.error_category) == ("partial", "request_limit")
+    assert result.request_count == agent.requests == 4
+
+
+async def test_get_without_budget_sends_nothing(make_client: ClientFactory) -> None:
+    async with ScriptedAgent(if_rows(1)) as agent:
+        result = await make_client(FAST).get(
+            target(agent), [parse_oid("1.3.6.1.2.1.2.2.1.2.1")], budget=0
+        )
+    assert (result.sent, agent.requests) == (False, 0)
+
+
+async def test_walk_without_rows_beyond_its_reservation_is_an_error(
+    make_client: ClientFactory,
+) -> None:
+    # Only a column outside the registry (ifSpecific, 22): the subtree needs
+    # many requests before any registry row, more than the reservation.
+    limits = SnmpLimits(timeout=0.3, retries=0, max_repetitions=5)
+    data = table("1.3.6.1.2.1.2.2.1", {22: [rfc1902.ObjectIdentifier("0.0")] * 30})
+    async with ScriptedAgent(data) as agent:
+        result = await make_client(limits).walk_table(target(agent), IF_TABLE, budget=3)
+    assert (result.outcome, result.error_category, result.row_count) == (
+        "error",
+        "request_limit",
+        0,
+    )
+    # Budget 3: two requests, with the third datagram held for the probe until
+    # the walk could not continue.
+    assert result.request_count == agent.requests == 2
+
+
+async def test_shared_budget_pool_is_never_exceeded(make_client: ClientFactory) -> None:
+    limits = SnmpLimits(timeout=0.3, retries=0, max_repetitions=5)
+    pool = BudgetPool(7)
+    agents = [ScriptedAgent(if_rows(40, columns=(2,))) for _ in range(2)]
+    for agent in agents:
+        await agent.start()
+    try:
+        client = make_client(limits)
+        results = await asyncio.gather(
+            *(client.walk_table(target(a), IF_TABLE, budget=pool) for a in agents)
+        )
+    finally:
+        for agent in agents:
+            agent.close()
+    assert (
+        sum(a.requests for a in agents)
+        == sum(r.request_count for r in results)
+        == pool.consumed
+        <= 7
+    )
+    assert pool.reserved == 0  # every unused reservation returned
+    assert {r.error_category for r in results} == {"request_limit"}
+
+
+@pytest.mark.lab
+async def test_snmpv3_call_consumes_one_datagram_for_engine_discovery(
+    make_client: ClientFactory, snmp_lab: SnmpLab
+) -> None:
+    credential = SnmpV3Credential(
+        user=snmp_lab.v3_user,
+        level="authPriv",
+        auth_protocol="SHA-256",
+        auth_key=snmp_lab.v3_auth_key,
+        priv_protocol="AES-128",
+        priv_key=snmp_lab.v3_priv_key,
+    )
+    pool = BudgetPool(100)
+    client = make_client(LAB, v3_context="lab-sw-01")
+    result = await client.walk_table(
+        authorized(snmp_lab.host, snmp_lab.port, credential),
+        get_table("SNMPv2-MIB::system"),
+        budget=pool,
+    )
+    assert result.outcome == "ok"
+    assert result.budget_used == result.request_count + 1 == pool.consumed
+    v2 = await client.walk_table(
+        lab_target(snmp_lab, "srx-01"), get_table("SNMPv2-MIB::system"), budget=BudgetPool(100)
+    )
+    assert v2.budget_used == v2.request_count

@@ -23,7 +23,7 @@ from netscanner.core.config import (
 )
 from netscanner.core.startup import bootstrap
 
-from .conftest import REPO_ROOT, Canaries, run_module
+from .conftest import REPO_ROOT, Canaries, make_settings, run_module
 
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
@@ -166,3 +166,24 @@ def test_invalid_secret_does_not_echo_input(canaries: Canaries) -> None:
     assert "NETSCANNER_DB_PASSWORD" in result.stderr
     assert "must be changed" in result.stderr
     canaries.assert_absent(result.stdout, result.stderr)
+
+
+# --- Secret key length (add-discovery-and-basic-inventory, design D5) -------
+
+
+def test_short_secret_key_refused(canaries: Canaries) -> None:
+    env = secret_env(canaries)
+    env["NETSCANNER_SECRET_KEY"] = "s" * 31
+    result = run_module("netscanner.collector", env)
+    assert result.returncode == EXIT_CONFIG_ERROR
+    assert "NETSCANNER_SECRET_KEY" in result.stderr and "at least 32 characters" in result.stderr
+    assert "s" * 31 not in result.stderr
+
+
+def test_secret_key_of_32_characters_accepted(canaries: Canaries) -> None:
+    make_settings(canaries, secret_key="k" * 32)
+
+
+def test_env_example_explains_how_to_generate_the_key() -> None:
+    text = ENV_EXAMPLE.read_text(encoding="utf-8")
+    assert "secrets.token_urlsafe(32)" in text and "at least 32 characters" in text

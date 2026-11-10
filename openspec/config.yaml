@@ -85,17 +85,25 @@ context: |
   - Until add-admin-authentication (RNF-05) is implemented, the application
     is used only with lab data and bound to localhost. It MUST be in place
     before the application stores real credentials or real network data.
+  - The lab-only scope guard (allowed ranges restricted to 10.99.0.0/24 and
+    loopback, add-discovery-and-basic-inventory design D6) may be removed only
+    by add-admin-authentication, and only together with end-to-end tests
+    showing that the settings, credential and run routes answer 401 without a
+    session.
 
   ## Planned change sequence (adjust only with a reason)
   1. setup-project-skeleton
   2. add-data-provenance-model (MANDATORY before any discovery code: origin,
      timestamps, evidence, observed/inferred, query outcomes)
   3. add-snmp-client-and-lab (client interface, query outcomes, snmpsim lab)
-  4. add-credentials-and-scope
-  5. add-device-discovery
-  6. add-interface-polling
-  7. add-admin-authentication
-  8. add-inventory-ui
+  4. add-discovery-and-basic-inventory (replaces the planned
+     add-credentials-and-scope and add-device-discovery: scope and
+     credentials are security preconditions of discovery, so they are part
+     of the same change; it also delivers the basic API and the device list
+     and detail screens)
+  5. add-interface-polling
+  6. add-admin-authentication
+  7. add-inventory-ui (the inventory screens beyond the basic list and detail)
   Later iterations follow the report: inventory and location, topology,
   traffic, evaluation.
 

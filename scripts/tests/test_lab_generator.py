@@ -102,7 +102,20 @@ def test_switches_are_consistent_with_srx01() -> None:
     pairs = {(h.ip, h.mac) for hosts in srx.hosts_by_interface.values() for h in hosts}
     assert set(media.items()) <= pairs
 
-    # Every lab address is distinct and the silent one is used by nobody.
+    # lab-sw-01's IP-MAC table: srx-01, lab-sw-02 and the silent address, all in the lab.
+    ip_mac = {
+        ".".join(o.split(".")[-4:]): v
+        for o, (_, v) in sw1.items()
+        if o.startswith("1.3.6.1.2.1.4.35.1.4.")
+    }
+    assert ip_mac == {
+        srx.management_address: srx.mac,
+        gen.SW2_ADDRESS: "020000aa0200",
+        gen.SILENT_ADDRESS: gen.SILENT_MAC,
+    }
+    assert gen.SILENT_MAC not in srx_macs | learned_macs
+
+    # Every lab address is distinct and no device holds the silent one.
     used = {srx.management_address, gen.SW1_ADDRESS, gen.SW2_ADDRESS}
     assert len(used) == 3 and gen.SILENT_ADDRESS not in used | srx_ips
 

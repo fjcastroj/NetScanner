@@ -205,6 +205,14 @@ def store_settings(test_db: TestDatabase) -> Iterator[Settings]:
         yield settings
 
 
+KEPT_ROWS = {"discovery_settings"}
+RESET_SETTINGS = (
+    "UPDATE discovery_settings SET seeds = '{}', allowed_ranges = '{}', exclusions = '{}',"
+    " max_depth = 1, follow_ip_mac = false, max_candidates = 4096, max_devices = 256,"
+    " max_datagrams = 50000"
+)
+
+
 @pytest.fixture
 async def engine(store_settings: Settings) -> AsyncIterator[AsyncEngine]:
     engine = create_engine(store_settings)
@@ -212,8 +220,10 @@ async def engine(store_settings: Settings) -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         async with engine.begin() as conn:
-            tables = ", ".join(t.name for t in metadata.sorted_tables)
+            tables = ", ".join(t.name for t in metadata.sorted_tables if t.name not in KEPT_ROWS)
             await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+            # The settings row created by migration 0004 is reset, not removed.
+            await conn.execute(text(RESET_SETTINGS))
         await engine.dispose()
 
 
@@ -293,70 +303,175 @@ def _lab_unavailable(reason: str) -> None:
     pytest.skip(f"SNMP lab not available: {reason}")
 
 
-async def _lab_answers(lab: SnmpLab) -> bool:
-    from netscanner.snmp import SnmpV2cCredential, Target, get_table
+async def _answers(host: str, port: int, community: str) -> bool:
+    from netscanner.snmp import get_table
     from netscanner.snmp.pysnmp_client import PySnmpClient
     from netscanner.snmp.walker import SnmpLimits
 
-    client = PySnmpClient(SnmpLimits(timeout=1, retries=0))
-    target = Target(lab.host, SnmpV2cCredential(community="lab-sw-02"), port=lab.port)
+    from .snmp_targets import RESOLVER, authorized
+
+    client = PySnmpClient(RESOLVER, SnmpLimits(timeout=1, retries=0))
+    target = authorized(host, port, community)
     result = await client.walk_table(target, get_table("SNMPv2-MIB::system"), ["sysName"])
     return result.row_count == 1
 
 
-@pytest.fixture(scope="session")
-def snmp_lab(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SnmpLab]:
-    """snmpsim with the lab data on a free local port, from its own pinned tools."""
-    uv = shutil.which("uv")
-    if uv is None:
-        _lab_unavailable("uv is not installed")
+async def _lab_answers(lab: SnmpLab) -> bool:
+    return await _answers(lab.host, lab.port, "lab-sw-02")
+
+
+@dataclass(frozen=True)
+class _V3User:
+    user: str
+    auth_key: str
+    priv_key: str
+
+
+def _v3_user() -> _V3User:
+    return _V3User(
+        "lab-v3-user", "lab-auth-" + secrets.token_hex(8), "lab-priv-" + secrets.token_hex(8)
+    )
+
+
+@contextmanager
+def _workdir(tmp_path_factory: pytest.TempPathFactory, name: str) -> Iterator[tuple[Path, bool]]:
     as_root = hasattr(os, "geteuid") and os.geteuid() == 0
     # As root, snmpsim drops to nobody, which cannot enter pytest's private
     # temporary directories: use a readable one of its own.
     work = (
-        Path(tempfile.mkdtemp(prefix="netscanner-snmpsim-"))
+        Path(tempfile.mkdtemp(prefix=f"netscanner-{name}-"))
         if as_root
-        else tmp_path_factory.mktemp("snmpsim")
+        else tmp_path_factory.mktemp(name)
     )
-    data, cache = work / "data", work / "cache"
-    shutil.copytree(LAB_DATA, data)  # indexes are written next to the data
+    try:
+        yield work, as_root
+    finally:
+        if as_root:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def _start_snmpsim(
+    uv: str, work: Path, data: Path, host: str, port: int, v3: _V3User, as_root: bool
+) -> tuple[subprocess.Popen, object]:
+    """One snmpsim process serving ``data`` on ``host:port`` from its own pinned tools."""
+    cache = work / ("cache-" + str(port))
     cache.mkdir()
     if as_root:
         for path in (work, data, cache, *data.iterdir()):
             path.chmod(0o777 if path.is_dir() else 0o644)
-    lab = SnmpLab(
-        host="127.0.0.1",
-        port=free_udp_port(),
-        v3_user="lab-v3-user",
-        v3_auth_key="lab-auth-" + secrets.token_hex(8),
-        v3_priv_key="lab-priv-" + secrets.token_hex(8),
-    )
     args = [
         uv, "run", "--no-project", "--python", "3.12",
         "--with-requirements", str(LAB_REQUIREMENTS),
         "snmpsim-command-responder",
         f"--data-dir={data}", f"--cache-dir={cache}",
-        f"--agent-udpv4-endpoint={lab.host}:{lab.port}",
-        f"--v3-user={lab.v3_user}", f"--v3-auth-key={lab.v3_auth_key}",
-        "--v3-auth-proto=SHA256", f"--v3-priv-key={lab.v3_priv_key}", "--v3-priv-proto=AES",
+        f"--agent-udpv4-endpoint={host}:{port}",
+        f"--v3-user={v3.user}", f"--v3-auth-key={v3.auth_key}",
+        "--v3-auth-proto=SHA256", f"--v3-priv-key={v3.priv_key}", "--v3-priv-proto=AES",
     ]  # fmt: skip
     if as_root:
         # snmpsim refuses to run as root without a user to drop privileges to.
         args += ["--process-user=nobody", "--process-group=nogroup"]
-    log = (work / "snmpsim.log").open("wb")
+    log = (work / f"snmpsim-{port}.log").open("wb")
     process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, cwd=work)
+    return process, log
+
+
+def _stop_snmpsim(process: subprocess.Popen, log: object) -> None:
+    process.terminate()
     try:
-        deadline = time.monotonic() + 180  # the first run installs the tools
-        while not asyncio.run(_lab_answers(lab)):
-            if process.poll() is not None or time.monotonic() > deadline:
-                _lab_unavailable("snmpsim did not start (see its log in the pytest temp dir)")
-        yield lab
-    finally:
-        process.terminate()
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+    log.close()  # type: ignore[attr-defined]
+
+
+def _wait_ready(processes: list[subprocess.Popen], ready: object) -> None:
+    deadline = time.monotonic() + 180  # the first run installs the tools
+    while not asyncio.run(ready()):  # type: ignore[operator]
+        if any(p.poll() is not None for p in processes) or time.monotonic() > deadline:
+            _lab_unavailable("snmpsim did not start (see its log in the pytest temp dir)")
+
+
+@pytest.fixture(scope="session")
+def snmp_lab(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SnmpLab]:
+    """snmpsim with the lab data on a free local port; each device by its community."""
+    uv = shutil.which("uv")
+    if uv is None:
+        _lab_unavailable("uv is not installed")
+    with _workdir(tmp_path_factory, "snmpsim") as (work, as_root):
+        data = work / "data"
+        shutil.copytree(LAB_DATA, data)  # indexes are written next to the data
+        v3 = _v3_user()
+        lab = SnmpLab("127.0.0.1", free_udp_port(), v3.user, v3.auth_key, v3.priv_key)
+        process, log = _start_snmpsim(uv, work, data, lab.host, lab.port, v3, as_root)  # type: ignore[arg-type]
         try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-        log.close()
-        if as_root:
-            shutil.rmtree(work, ignore_errors=True)
+            _wait_ready([process], lambda: _lab_answers(lab))
+            yield lab
+        finally:
+            _stop_snmpsim(process, log)
+
+
+# --- Discovery lab (add-discovery-and-basic-inventory, design D4) -----------
+
+LAB_COMMUNITY = "netscanner-lab"
+# Lab devices by management address (lab/manifest.yaml).
+LAB_DEVICES = {"10.99.0.13": "srx-01", "10.99.0.2": "lab-sw-01", "10.99.0.3": "lab-sw-02"}
+
+
+@dataclass(frozen=True)
+class DiscoveryLab:
+    """One snmpsim per lab device, each serving its data under the lab community.
+
+    As in Compose, one credential serves the whole lab: the data file of each
+    process is named after the community (and SNMPv3 context) ``netscanner-lab``.
+    """
+
+    host: str
+    ports: dict[str, int]  # lab address -> local UDP port
+    v3_user: str
+    v3_auth_key: str
+    v3_priv_key: str
+    community: str = LAB_COMMUNITY
+
+    def secrets(self) -> list[str]:
+        return [self.v3_auth_key, self.v3_priv_key]
+
+
+@pytest.fixture(scope="session")
+def discovery_lab(tmp_path_factory: pytest.TempPathFactory) -> Iterator[DiscoveryLab]:
+    uv = shutil.which("uv")
+    if uv is None:
+        _lab_unavailable("uv is not installed")
+    with _workdir(tmp_path_factory, "discovery-lab") as (work, as_root):
+        v3 = _v3_user()
+        lab = DiscoveryLab(
+            "127.0.0.1",
+            {address: free_udp_port() for address in LAB_DEVICES},
+            v3.user,
+            v3.auth_key,
+            v3.priv_key,
+        )
+        started = []
+        try:
+            for i, (address, label) in enumerate(LAB_DEVICES.items()):
+                data = work / label
+                data.mkdir()
+                shutil.copyfile(LAB_DATA / f"{label}.snmprec", data / f"{LAB_COMMUNITY}.snmprec")
+                port = lab.ports[address]
+                started.append(_start_snmpsim(uv, work, data, lab.host, port, v3, as_root))  # type: ignore[arg-type]
+                if i == 0:
+                    # The first process installs the pinned tools; the others reuse them,
+                    # so concurrent installs into the same environment cannot collide.
+                    _wait_ready(
+                        [started[0][0]], lambda p=port: _answers(lab.host, p, LAB_COMMUNITY)
+                    )
+
+            async def ready() -> bool:
+                answers = [await _answers(lab.host, p, LAB_COMMUNITY) for p in lab.ports.values()]
+                return all(answers)
+
+            _wait_ready([p for p, _ in started], ready)
+            yield lab
+        finally:
+            for process, log in started:
+                _stop_snmpsim(process, log)

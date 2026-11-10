@@ -8,6 +8,39 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Discovery and basic inventory (`add-discovery-and-basic-inventory`, RF-01
+  to RF-05, RF-11, RF-12 collection, RF-29, RNF-01, RNF-03, RNF-06):
+  - scope policy (`netscanner.scope`): allowed and excluded ranges, deny by
+    default, special addresses refused, scope frozen per run, and
+    `AuthorizedTarget` as the only way to the SNMP transport, re-checked
+    before every datagram and enforced by architecture tests;
+  - a lab-only guard: until `add-admin-authentication`, allowed ranges must
+    be inside 10.99.0.0/24 or loopback;
+  - operational limits per run (candidates, devices, SNMP datagrams
+    including retries and probes, depth) below server ceilings
+    (`NETSCANNER_DISCOVERY_*`); retries moved from PySNMP into the walker so
+    every datagram is counted;
+  - one SNMP credential set encrypted at rest (Fernet, key derived from
+    `NETSCANNER_SECRET_KEY`, now at least 32 characters), write-only through
+    the API, decrypted only by the SNMP adapter; migration `0004`;
+  - discovery runs executed by the collector (`FOR UPDATE SKIP LOCKED`, one
+    active run, interrupted runs marked at start): system group,
+    interfaces, addresses, ENTITY-MIB model, LLDP, CDP and IP-MAC tables
+    with their fallbacks, candidates from LLDP, CDP and optionally IP-MAC
+    entries, and a recorded reason for every candidate not queried;
+  - a narrow Juniper model rule (`netscanner.vendors.juniper`, method
+    `juniper-sysdescr-pattern`) based only on the `srx-01` capture format;
+  - API routes under `/api` for settings, the credential, runs, devices and
+    status (lab mode), with validation errors that never echo values;
+  - web screens for settings, discovery, the device list and the device
+    detail, with a `Provenance` component (observed or inferred, age, stale
+    mark, method and evidence on demand) and a lab mode banner, in Spanish
+    and English; React Router 8.4.0 pinned;
+  - lab: `lab-sw-01` gains a small synthetic `ipNetToPhysicalTable`, so
+    IP-MAC following reaches a silent lab address;
+  - the stack test runs with `docker-compose.lab.yml` and discovers the lab
+    through the API; `docs/architecture.md` describes scope enforcement and
+    credential handling.
 - Read-only SNMP client (`add-snmp-client-and-lab`, RF-06, RNF-01, RNF-02,
   RNF-04, RNF-06): package `netscanner.snmp` with a project-owned client
   interface and a PySNMP 7.1.32 implementation. It uses GET and GETBULK

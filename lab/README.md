@@ -41,6 +41,11 @@ only by lab data.
     `dot1qVlanFdbId`, so FDB ids differ from VLAN ids;
   - 30 host MAC addresses from `srx-01` learned on access ports, `srx-01`'s
     MAC on the uplink, `self` entries and a `mgmt` entry.
+  - a small `ipNetToPhysicalTable` on `irb.0` with three entries: 10.99.0.13
+    with `srx-01`'s MAC address (derived), 10.99.0.3 with `lab-sw-02`'s MAC
+    address and 10.99.0.9 with an invented MAC address. With IP-MAC following
+    on, they lead discovery to `srx-01`, to `lab-sw-02` (already found over
+    LLDP) and to the silent address.
 - **`lab-sw-02`** models a smaller switch:
   - no LLDP-MIB, so it is seen from `lab-sw-01` only, a one-sided neighbour;
   - no `ifXTable`, so only 32-bit counters;

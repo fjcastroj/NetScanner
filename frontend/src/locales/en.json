@@ -5,7 +5,9 @@
   },
   "nav": {
     "label": "Main navigation",
-    "empty": "Sections will appear here."
+    "settings": "Settings",
+    "discovery": "Discovery",
+    "devices": "Devices"
   },
   "language": {
     "label": "Language",
@@ -18,7 +20,175 @@
     "available": "Service available",
     "unavailable": "Service unavailable"
   },
-  "home": {
-    "placeholder": "No network has been configured yet."
+  "lab": {
+    "label": "Lab mode notice",
+    "title": "Lab mode without authentication.",
+    "text": "Only the lab ranges can be queried until administrator authentication exists. Do not expose this application outside the local host."
+  },
+  "common": {
+    "loading": "Loading…"
+  },
+  "errors": {
+    "load": "The data could not be loaded. Try again later.",
+    "save": "The change could not be saved. Try again later."
+  },
+  "settings": {
+    "discovery": "Discovery settings",
+    "seeds": "Seeds",
+    "allowed_ranges": "Allowed ranges",
+    "exclusions": "Excluded ranges",
+    "max_depth": "Maximum depth",
+    "max_candidates": "Maximum candidates",
+    "max_devices": "Maximum devices queried",
+    "max_datagrams": "Maximum SNMP datagrams",
+    "follow_ip_mac": "Use IP-MAC entries as candidates",
+    "one_per_line": "One address or range per line.",
+    "ceiling": "Server ceiling: {{value}}",
+    "line": "line {{n}}",
+    "save": "Save settings",
+    "saved": "Settings saved.",
+    "invalid": "Some values were rejected; see the messages next to each field.",
+    "seeds_help": "One IP address per line (no ranges)."
+  },
+  "credential": {
+    "title": "SNMP credential",
+    "configured": "A credential is configured: version {{version}}, updated {{time}}.",
+    "unusable": "It cannot be used with the current secret key; enter it again.",
+    "none": "No credential is configured.",
+    "version": "SNMP version",
+    "community": "Community",
+    "user": "User",
+    "level": "Security level",
+    "auth_protocol": "Authentication protocol",
+    "auth_key": "Authentication key",
+    "priv_protocol": "Privacy protocol",
+    "priv_key": "Privacy key",
+    "save": "Replace credential",
+    "saved": "Credential replaced."
+  },
+  "discovery": {
+    "start": "Start discovery",
+    "in_progress": "A run is in progress; the status refreshes every few seconds.",
+    "already_running": "A discovery run is already in progress.",
+    "field": {
+      "seeds": "Seeds",
+      "credential": "Credential"
+    },
+    "run": "Run {{id}}",
+    "candidates": "Candidates recorded",
+    "devices": "Devices reached",
+    "new_devices": "New devices",
+    "queries": "SNMP queries",
+    "reasons": "Candidates not queried or without answer",
+    "limits_reached": "Limits reached: {{limits}}",
+    "history": "Past runs",
+    "none": "No run yet.",
+    "id": "Run",
+    "requested": "Requested",
+    "finished": "Finished",
+    "result": "Result"
+  },
+  "runs": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "interrupted": "Interrupted"
+  },
+  "run_errors": {
+    "empty_scope": "no allowed range",
+    "scope_not_allowed": "range outside the lab",
+    "limits_not_allowed": "limits not allowed",
+    "credential_unreadable": "credential unreadable",
+    "database_error": "database error",
+    "internal_error": "internal error"
+  },
+  "reasons": {
+    "out_of_scope": "Out of scope",
+    "excluded": "Excluded",
+    "special_address": "Special address",
+    "already_known": "Already known in this run",
+    "max_depth": "Beyond the maximum depth",
+    "limit_reached": "Limit reached",
+    "no_response": "No response",
+    "auth_failed": "Authentication failed",
+    "query_error": "Query error"
+  },
+  "devices": {
+    "name": "Name",
+    "vendor": "Vendor",
+    "model": "Model",
+    "software_version": "Software version",
+    "management_address": "Management address",
+    "interfaces": "Interfaces",
+    "first_seen": "First seen",
+    "last_seen": "Last seen",
+    "none": "No device has been discovered yet.",
+    "range": "{{from}}–{{to}} of {{total}}",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "device": {
+    "groups": {
+      "system": "System",
+      "chassis": "Chassis",
+      "vendor": "Vendor",
+      "model": "Model and version"
+    },
+    "not_collected": "Not collected yet.",
+    "not_found": "Device not found.",
+    "back": "Back to the device list",
+    "title": "Device {{id}}",
+    "addresses": "Addresses ({{count}})",
+    "address": "Address",
+    "address_source": "Source",
+    "source": {
+      "address_table": "Address table",
+      "management": "Management address"
+    },
+    "interfaces": "Interfaces ({{count}})",
+    "uptime": "{{days}} d {{hours}} h {{minutes}} min"
+  },
+  "fields": {
+    "sys_name": "Name",
+    "sys_descr": "Description",
+    "sys_object_id": "Object identifier",
+    "sys_uptime": "Uptime",
+    "enterprise_number": "Enterprise number",
+    "chassis_id_subtype": "Chassis id subtype",
+    "chassis_id": "Chassis id",
+    "vendor_name": "Vendor",
+    "vendor_status": "Registry status",
+    "model": "Model",
+    "software_version": "Software version",
+    "if_index": "ifIndex",
+    "if_descr": "Description",
+    "if_name": "Name",
+    "if_type": "Type",
+    "speed_bps": "Speed (bit/s)",
+    "admin_status": "Admin status",
+    "oper_status": "Operational status",
+    "phys_address": "Physical address"
+  },
+  "provenance": {
+    "unknown": "not retrieved",
+    "observed": "observed",
+    "inferred": "inferred",
+    "stale": "stale, last seen {{time}}",
+    "stale_short": "stale",
+    "details": "origin",
+    "method": "Method",
+    "no_method": "read directly from the table",
+    "source": "Source table",
+    "query": "Query",
+    "query_ref": "query {{query}} of run {{run}}",
+    "seen_at": "Last seen",
+    "evidence": "Evidence",
+    "raw": "Raw value"
+  },
+  "vendor_status": {
+    "known": "in the vendor registry",
+    "generic_agent": "generic SNMP agent (the hardware vendor is not known)",
+    "not_in_registry": "enterprise number not in the registry"
   }
 }

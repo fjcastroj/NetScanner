@@ -224,6 +224,7 @@ method with its origin and version.
 | `lldp-portnum-equals-ifindex` | inferred | 1 | LLDP local port mapped to the interface whose `ifIndex` equals `lldpLocPortNum` | Not guaranteed by 802.1AB (hypothesis H1) |
 | `enterprise-registry` | inferred | 1 | Vendor name from the enterprise number of `sysObjectID` | The OID owner made the hardware; false for OEM devices and generic agents |
 | `sysdescr-model-pattern` | inferred | 1 | Model and version from `model <x>` and `version <y>` fragments of `sysDescr` | `sysDescr` labels them with these words |
+| `juniper-sysdescr-pattern` | inferred | 1 | Juniper model and JUNOS version from `<model> internet router, kernel JUNOS <version>` in `sysDescr`, only for `sysObjectID` in enterprise 2636 and only when ENTITY-MIB and `sysdescr-model-pattern` give nothing (`netscanner.vendors.juniper`) | Other Juniper devices describe themselves like the one captured device (`srx-01`); any other format infers nothing |
 | `chassis-id` | inferred | 1 | Observations attached to the device that reported the same LLDP chassis id | Chassis ids are unique and stable (hypothesis H3) |
 | `address` | inferred | 1 | Observations attached to the device already known at the queried address | The address still belongs to the same device |
 

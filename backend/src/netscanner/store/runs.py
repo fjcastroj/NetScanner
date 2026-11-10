@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import (
     AwareDatetime,
@@ -27,7 +27,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -45,6 +45,18 @@ from netscanner.store.registry import (
 
 RunKind = Literal["discovery", "rediscovery", "polling"]
 ReachedVia = Literal["seed", "lldp", "cdp", "ip-mac"]
+SkipReason = Literal[
+    "out_of_scope",
+    "excluded",
+    "special_address",
+    "already_known",
+    "max_depth",
+    "limit_reached",
+    "no_response",
+    "auth_failed",
+    "query_error",
+]
+SKIP_REASONS = frozenset(SkipReason.__args__)
 
 
 def safe_validation_message(exc: ValidationError) -> str:
@@ -59,6 +71,16 @@ def safe_validation_message(exc: ValidationError) -> str:
 
 
 # --- Runs -------------------------------------------------------------------
+
+
+class RunLimits(BaseModel):
+    """Operational limits of one run, copied from the settings (design D6)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_candidates: int = Field(ge=1)
+    max_devices: int = Field(ge=1)
+    max_datagrams: int = Field(ge=1)
 
 
 class RunParameters(BaseModel):
@@ -76,6 +98,9 @@ class RunParameters(BaseModel):
     device_ids: list[int] = Field(default_factory=list, max_length=100_000)
     # Ask finish_run to store an evaluation snapshot (design D11).
     snapshot: bool = False
+    # add-discovery-and-basic-inventory: defaults keep earlier runs parseable.
+    follow_ip_mac: bool = False
+    limits: RunLimits | None = None
 
 
 def parse_parameters(value: RunParameters | dict) -> RunParameters:
@@ -120,6 +145,25 @@ async def _transition(
 
 async def start_run(conn: AsyncConnection, run_id: int, now: datetime) -> None:
     await _transition(conn, run_id, ("pending",), status="running", started_at=now)
+
+
+async def claim_pending_run(
+    conn: AsyncConnection, now: datetime, kinds: tuple[str, ...] = ("discovery",)
+) -> int | None:
+    """Start the oldest pending run of ``kinds``; ``None`` if there is none.
+
+    ``FOR UPDATE SKIP LOCKED``: two collectors never claim the same run.
+    """
+    run_id = await conn.scalar(
+        select(collection_runs.c.id)
+        .where(collection_runs.c.status == "pending", collection_runs.c.kind.in_(kinds))
+        .order_by(collection_runs.c.requested_at, collection_runs.c.id)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    if run_id is not None:
+        await start_run(conn, run_id, now)
+    return run_id
 
 
 async def close_run(
@@ -317,12 +361,24 @@ async def record_run_device(
     first_query_id: int | None = None,
     answered: bool = False,
     device_id: int | None = None,
+    skip_reason: SkipReason | None = None,
+    found_from_device_id: int | None = None,
 ) -> int:
-    """Record a device or candidate address reached by a run, new or known."""
+    """Record a device or candidate address reached by a run, new or known.
+
+    The first record of an address keeps how and from which device it was
+    found. A reason given replaces the stored one; recording a query sent to
+    the address (``first_query_id`` or ``answered``) without a reason clears
+    it, so a queried candidate never keeps a reason it no longer has.
+    """
     if reached_via not in ("seed", "lldp", "cdp", "ip-mac"):
         raise StoreError(f"unknown way to reach a device: {reached_via!r}")
     if depth < 0:
         raise StoreError("depth must not be negative")
+    if skip_reason is not None and skip_reason not in SKIP_REASONS:
+        raise StoreError("unknown reason for a candidate not queried")
+    if skip_reason is not None and device_id is not None:
+        raise StoreError("a candidate has either a device or a reason, not both")
     stmt = insert(run_devices).values(
         run_id=run_id,
         target_address=str(target_address),
@@ -331,7 +387,10 @@ async def record_run_device(
         first_query_id=first_query_id,
         answered=answered,
         device_id=device_id,
+        skip_reason=skip_reason,
+        found_from_device_id=found_from_device_id,
     )
+    queried = stmt.excluded.first_query_id.is_not(None) | stmt.excluded.answered
     stmt = stmt.on_conflict_do_update(
         index_elements=["run_id", "target_address"],
         set_={
@@ -341,6 +400,14 @@ async def record_run_device(
             ),
             "answered": run_devices.c.answered | stmt.excluded.answered,
             "device_id": func.coalesce(stmt.excluded.device_id, run_devices.c.device_id),
+            "skip_reason": case(
+                (stmt.excluded.skip_reason.is_not(None), stmt.excluded.skip_reason),
+                (queried | stmt.excluded.device_id.is_not(None), None),
+                else_=run_devices.c.skip_reason,
+            ),
+            "found_from_device_id": func.coalesce(
+                run_devices.c.found_from_device_id, stmt.excluded.found_from_device_id
+            ),
         },
     )
     return await conn.scalar(stmt.returning(run_devices.c.id))
@@ -366,5 +433,54 @@ async def assign_device(
     await conn.execute(
         update(run_devices)
         .where(run_devices.c.run_id == run_id, run_devices.c.target_address == address)
-        .values(device_id=device_id, answered=True)
+        .values(device_id=device_id, answered=True, skip_reason=None)
+    )
+
+
+RUN_COLUMNS = (
+    "id",
+    "kind",
+    "status",
+    "requested_at",
+    "started_at",
+    "finished_at",
+    "error_category",
+)
+
+
+async def list_runs(
+    conn: AsyncConnection, limit: int, offset: int
+) -> tuple[int, list[dict[str, Any]]]:
+    """A page of runs, newest first, and the total number of runs."""
+    total = await conn.scalar(select(func.count()).select_from(collection_runs))
+    columns = [collection_runs.c[name] for name in RUN_COLUMNS]
+    rows = await conn.execute(
+        select(*columns)
+        .order_by(collection_runs.c.requested_at.desc(), collection_runs.c.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return total or 0, [dict(r._mapping) for r in rows]
+
+
+async def get_run(conn: AsyncConnection, run_id: int) -> dict[str, Any] | None:
+    """One run with its parameters and summary, or ``None``."""
+    columns = [collection_runs.c[name] for name in RUN_COLUMNS]
+    row = (
+        await conn.execute(
+            select(*columns, collection_runs.c.parameters, collection_runs.c.summary).where(
+                collection_runs.c.id == run_id
+            )
+        )
+    ).first()
+    return None if row is None else dict(row._mapping)
+
+
+async def count_queries(conn: AsyncConnection, run_id: int) -> int:
+    """SNMP queries recorded for a run so far."""
+    return (
+        await conn.scalar(
+            select(func.count()).select_from(snmp_queries).where(snmp_queries.c.run_id == run_id)
+        )
+        or 0
     )

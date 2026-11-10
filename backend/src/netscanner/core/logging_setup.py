@@ -22,20 +22,30 @@ _in_use: Counter[str] = Counter()
 _in_use_lock = threading.Lock()
 
 
-@contextmanager
-def secrets_in_use(values: Iterable[str]) -> Iterator[None]:
-    """Mask ``values`` in every log record while the block runs."""
+def register_secrets(values: Iterable[str]) -> list[str]:
+    """Start masking ``values`` in every log record; returns what to unregister."""
     registered = [v for v in values if v]
     with _in_use_lock:
         _in_use.update(registered)
+    return registered
+
+
+def unregister_secrets(registered: Iterable[str]) -> None:
+    with _in_use_lock:
+        for value in registered:
+            _in_use[value] -= 1
+            if _in_use[value] <= 0:
+                del _in_use[value]
+
+
+@contextmanager
+def secrets_in_use(values: Iterable[str]) -> Iterator[None]:
+    """Mask ``values`` in every log record while the block runs."""
+    registered = register_secrets(values)
     try:
         yield
     finally:
-        with _in_use_lock:
-            _in_use.subtract(registered)
-            for value in registered:
-                if _in_use[value] <= 0:
-                    del _in_use[value]
+        unregister_secrets(registered)
 
 
 class SecretMaskingFilter(logging.Filter):

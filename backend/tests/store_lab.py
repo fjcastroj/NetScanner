@@ -16,6 +16,7 @@ from sqlalchemy import Table, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from netscanner.store.identity import Chassis
+from netscanner.store.models import collection_runs
 from netscanner.store.service import Store
 
 from .conftest import T0
@@ -28,6 +29,15 @@ class Lab:
         self._run: int | None = None
 
     async def run(self, kind: str = "discovery", parameters: dict | None = None) -> int:
+        """Start a run, finishing this helper's previous discovery run first:
+        only one discovery run may be active (add-discovery-and-basic-inventory, D7)."""
+        if self._run is not None and kind in ("discovery", "rediscovery"):
+            async with self.engine.connect() as conn:
+                status = await conn.scalar(
+                    select(collection_runs.c.status).where(collection_runs.c.id == self._run)
+                )
+            if status == "running":
+                await self.store.finish_run(self._run)
         run = await self.store.create_run(kind, parameters or {})
         await self.store.start_run(run)
         self._run = run

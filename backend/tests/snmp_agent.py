@@ -35,6 +35,7 @@ def oid(text: str) -> Oid:
 class Behaviour:
     delay: float = 0.0
     stop_after: int | None = None  # responses sent before going silent
+    ignore_first: int = 0  # requests ignored before answering (to cause one retry)
     error_status: str | None = None
     error_after: int = 0  # good responses before the error status
     non_increasing_after: int | None = None
@@ -104,6 +105,8 @@ class ScriptedAgent:
     def answer(self, request: bytes) -> bytes | None:
         """The response datagram, or None to stay silent."""
         b = self.behaviour
+        if self.requests <= b.ignore_first:
+            return None
         if b.stop_after is not None and self.responses >= b.stop_after:
             return None
         if b.garbage:

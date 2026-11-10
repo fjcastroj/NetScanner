@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import Table, and_, select
+from sqlalchemy import Table, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from netscanner.store.errors import StoreError
@@ -332,3 +332,59 @@ async def read_ip_mac(
         ("if_index", "ip_address"),
         ip_mac_entries.c.device_id == device_id,
     )
+
+
+@dataclass(frozen=True)
+class DeviceSummary:
+    """One row of the device list: its groups with provenance and two counts."""
+
+    id: int
+    groups: dict[str, GroupView | None]
+    management_address: str | None
+    interface_count: int
+
+
+async def list_devices(
+    conn: AsyncConnection, limit: int, offset: int, now: datetime, stale_after: timedelta
+) -> tuple[int, list[DeviceSummary]]:
+    """A page of devices in identifier order, and the total number of devices."""
+    total = await conn.scalar(select(func.count()).select_from(devices))
+    count = (
+        select(func.count())
+        .where(interfaces.c.device_id == devices.c.id)
+        .correlate(devices)
+        .scalar_subquery()
+    )
+    management = (
+        select(func.min(device_addresses.c.address))
+        .where(
+            device_addresses.c.device_id == devices.c.id,
+            device_addresses.c.source == "management",
+        )
+        .correlate(devices)
+        .scalar_subquery()
+    )
+    rows = [
+        r._mapping
+        for r in await conn.execute(
+            select(
+                devices,
+                count.label("interface_count"),
+                management.label("management_address"),
+            )
+            .order_by(devices.c.id)
+            .limit(limit)
+            .offset(offset)
+        )
+    ]
+    reader = _Reader(conn, now, stale_after)
+    await reader.load(rows, DEVICE_GROUPS)
+    return total or 0, [
+        DeviceSummary(
+            id=row["id"],
+            groups={spec.name: reader.group(row, spec) for spec in DEVICE_GROUPS},
+            management_address=_plain(row["management_address"]),
+            interface_count=row["interface_count"],
+        )
+        for row in rows
+    ]

@@ -33,12 +33,15 @@ devices:
     data: snmpsim/data/lab-sw-01.snmprec
     generator: generate_synthetic.py
     management_address: 10.99.0.2
-    models: Juniper-like access switch (sysObjectID of an EX2300), Q-BRIDGE FDB, LLDP
+    models: Juniper-like access switch (sysObjectID of an EX2300), Q-BRIDGE FDB, LLDP, small IP-MAC table
     derived_values:
       - values: 30 host MAC addresses in dot1qTpFdbTable
         from: srx-01
         source: ipNetToPhysicalTable entries of the srx-01 interface with most entries (fixed seed)
       - values: srx-01 MAC address learned on the uplink port ge-0/0/23
+        from: srx-01
+        source: ifPhysAddress of the interface holding its management address
+      - values: srx-01 MAC address in the ipNetToPhysicalTable entry for 10.99.0.13
         from: srx-01
         source: ifPhysAddress of the interface holding its management address
 
@@ -55,7 +58,7 @@ devices:
 
 unanswered:
   - address: 10.99.0.9
-    note: in the lab range; no agent answers there
+    note: in the lab range; no agent answers there; listed in lab-sw-01's IP-MAC table
 
 external:
   - address: 203.0.113.10

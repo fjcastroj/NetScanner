@@ -172,6 +172,20 @@ TABLES: dict[str, TableSpec] = {
             "1.0.8802.1.1.2.1.4.2.1",
             {"lldpRemManAddrIfSubtype": 3, "lldpRemManAddrIfId": 4},
         ),
+        # Index: cdpCacheIfIndex.cdpCacheDeviceIndex (CISCO-CDP-MIB).
+        _spec(
+            "CISCO-CDP-MIB::cdpCacheTable",
+            "1.3.6.1.4.1.9.9.23.1.2.1.1",
+            {
+                "cdpCacheAddressType": 3,
+                "cdpCacheAddress": 4,
+                "cdpCacheVersion": 5,
+                "cdpCacheDeviceId": 6,
+                "cdpCacheDevicePort": 7,
+                "cdpCachePlatform": 8,
+                "cdpCacheCapabilities": 9,
+            },
+        ),
         _spec(
             "BRIDGE-MIB::dot1dBase",
             "1.3.6.1.2.1.17.1",

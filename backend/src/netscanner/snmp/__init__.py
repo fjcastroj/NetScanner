@@ -15,15 +15,25 @@ from netscanner.snmp.credentials import (
     SnmpV3Credential,
     parse_credential,
 )
-from netscanner.snmp.results import GetResult, SnmpClient, SnmpException, TableResult, Target
+from netscanner.snmp.factory import create_client
+from netscanner.snmp.results import GetResult, SnmpClient, SnmpException, TableResult
 from netscanner.snmp.tables import TABLES, TableSpec, get_table
-from netscanner.snmp.walker import BoundedClient, SnmpLimits
+from netscanner.snmp.walker import (
+    BoundedClient,
+    BudgetPool,
+    CredentialSource,
+    ScopeViolation,
+    SnmpLimits,
+)
 
 __all__ = [
     "TABLES",
     "BoundedClient",
+    "BudgetPool",
     "CredentialError",
+    "CredentialSource",
     "GetResult",
+    "ScopeViolation",
     "SnmpClient",
     "SnmpException",
     "SnmpLimits",
@@ -31,7 +41,7 @@ __all__ = [
     "SnmpV3Credential",
     "TableResult",
     "TableSpec",
-    "Target",
+    "create_client",
     "get_table",
     "parse_credential",
 ]

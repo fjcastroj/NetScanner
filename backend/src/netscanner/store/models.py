@@ -22,6 +22,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     SmallInteger,
     String,
@@ -30,7 +31,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB, MACADDR
+from sqlalchemy.dialects.postgresql import ARRAY, CIDR, INET, JSONB, MACADDR
 from sqlalchemy.orm import DeclarativeBase
 
 from netscanner.store.groups import GroupSpec, provenance_group
@@ -76,6 +77,19 @@ INDICATORS = (
 OPERATIONS = ("get", "getnext", "getbulk", "walk")
 SNMP_VERSIONS = ("1", "2c", "3")
 REACHED_VIA = ("seed", "lldp", "cdp", "ip-mac")
+# Why a candidate of a run was not queried or led to no device (device-discovery spec).
+SKIP_REASONS = (
+    "out_of_scope",
+    "excluded",
+    "special_address",
+    "already_known",
+    "max_depth",
+    "limit_reached",
+    "no_response",
+    "auth_failed",
+    "query_error",
+)
+CREDENTIAL_VERSIONS = ("v2c", "v3")
 ADDRESS_SOURCES = ("address_table", "management")
 IP_MAC_TYPES = ("other", "dynamic", "static", "local")
 RESOLUTION_STATUSES = ("active", "conflicted")
@@ -190,6 +204,15 @@ collection_runs = Table(
     ),
     CheckConstraint("started_at >= requested_at", name="started_order"),
     CheckConstraint("finished_at >= coalesce(started_at, requested_at)", name="finished_order"),
+)
+# At most one active discovery run (design D7): a second insert fails atomically.
+Index(
+    "uq_collection_runs_one_active_discovery",
+    text("(true)"),
+    unique=True,
+    postgresql_where=text(
+        "status IN ('pending', 'running') AND kind IN ('discovery', 'rediscovery')"
+    ),
 )
 
 snmp_queries = Table(
@@ -306,9 +329,69 @@ run_devices = Table(
     Column("depth", SmallInteger, nullable=False),
     Column("first_query_id", BigInteger, ForeignKey("snmp_queries.id")),
     Column("answered", Boolean, nullable=False),
+    Column("skip_reason", String(32)),
+    Column("found_from_device_id", BigInteger, ForeignKey("devices.id")),
     UniqueConstraint("run_id", "target_address"),
     CheckConstraint(_in("reached_via", REACHED_VIA), name="reached_via"),
     CheckConstraint("depth >= 0", name="depth"),
+    CheckConstraint(_in("skip_reason", SKIP_REASONS), name="skip_reason"),
+    # Either the device it led to or a reason, never both.
+    CheckConstraint("device_id IS NULL OR skip_reason IS NULL", name="device_or_reason"),
+)
+
+# --- Discovery configuration and credential (add-discovery-and-basic-inventory) --
+
+snmp_credentials = Table(
+    "snmp_credentials",
+    metadata,
+    _id(),
+    Column("version", String(4), nullable=False),
+    Column("v3_user", String(32)),
+    Column("v3_level", String(16)),
+    Column("v3_auth_protocol", String(16)),
+    Column("v3_priv_protocol", String(16)),
+    # Fernet token of a JSON object with the secret fields (design D5).
+    Column("secret", LargeBinary, nullable=False),
+    Column("key_id", String(32), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("active", Boolean, nullable=False),
+    CheckConstraint(_in("version", CREDENTIAL_VERSIONS), name="version"),
+    CheckConstraint(
+        "(version = 'v2c'"
+        " AND num_nonnulls(v3_user, v3_level, v3_auth_protocol, v3_priv_protocol) = 0)"
+        " OR (version = 'v3' AND v3_user IS NOT NULL AND v3_level IS NOT NULL"
+        " AND v3_auth_protocol IS NOT NULL)",
+        name="v3_fields",
+    ),
+    CheckConstraint("key_id ~ '^[0-9a-f]{32}$'", name="key_id"),
+)
+# Only one active credential set (RF-01).
+Index(
+    "uq_snmp_credentials_one_active",
+    snmp_credentials.c.active,
+    unique=True,
+    postgresql_where=text("active"),
+)
+
+discovery_settings = Table(
+    "discovery_settings",
+    metadata,
+    Column("id", SmallInteger, primary_key=True),
+    Column("seeds", ARRAY(INET), nullable=False, server_default=text("'{}'")),
+    Column("allowed_ranges", ARRAY(CIDR), nullable=False, server_default=text("'{}'")),
+    Column("exclusions", ARRAY(CIDR), nullable=False, server_default=text("'{}'")),
+    Column("max_depth", SmallInteger, nullable=False),
+    Column("follow_ip_mac", Boolean, nullable=False, server_default=text("false")),
+    Column("max_candidates", Integer, nullable=False),
+    Column("max_devices", Integer, nullable=False),
+    Column("max_datagrams", Integer, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("id = 1", name="single_row"),
+    CheckConstraint(
+        "max_depth BETWEEN 0 AND 32 AND max_candidates >= 1 AND max_devices >= 1"
+        " AND max_datagrams >= 1",
+        name="limits",
+    ),
 )
 
 # --- Observations -----------------------------------------------------------
@@ -464,3 +547,11 @@ class IpMacEntry(Base):
 
 class EvaluationSnapshot(Base):
     __table__ = evaluation_snapshots
+
+
+class SnmpCredentialRow(Base):
+    __table__ = snmp_credentials
+
+
+class DiscoverySettingsRow(Base):
+    __table__ = discovery_settings

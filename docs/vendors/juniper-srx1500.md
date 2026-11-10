@@ -54,3 +54,14 @@ exist. The Net-SNMP fallback of the capture kit showed it for
   and one mapped by description cannot be told apart on this device.
 - The volume (259 interfaces, 427 IP-MAC entries) makes `srx-01` the
   realistic load case of the lab.
+- `sysDescr` reads `Juniper Networks, Inc. srx1500 internet router, kernel
+  JUNOS 19.4R3.11, Build date: ...`, with no `model` keyword, so the generic
+  pattern infers nothing. The rule `juniper-sysdescr-pattern`
+  (`netscanner.vendors.juniper`) takes the model from `<model> internet
+  router` and the version from the `kernel JUNOS <version>` that follows it.
+  **It is based on this capture's format only**: other Juniper models,
+  products or JUNOS releases may describe themselves differently, and then
+  the rule infers nothing. It applies only to `sysObjectID` values in
+  enterprise 2636, only when ENTITY-MIB gives no model and the generic
+  pattern finds nothing, and its evidence holds only the two matched
+  fragments.
