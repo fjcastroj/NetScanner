@@ -47,7 +47,8 @@
     "line": "línea {{n}}",
     "save": "Guardar configuración",
     "saved": "Configuración guardada.",
-    "invalid": "Algunos valores se han rechazado; mira los mensajes junto a cada campo."
+    "invalid": "Algunos valores se han rechazado; mira los mensajes junto a cada campo.",
+    "seeds_help": "Una dirección IP por línea (sin rangos)."
   },
   "credential": {
     "title": "Credencial SNMP",
@@ -145,13 +146,14 @@
       "address_table": "Tabla de direcciones",
       "management": "Dirección de gestión"
     },
-    "interfaces": "Interfaces ({{count}})"
+    "interfaces": "Interfaces ({{count}})",
+    "uptime": "{{days}} d {{hours}} h {{minutes}} min"
   },
   "fields": {
     "sys_name": "Nombre",
     "sys_descr": "Descripción",
     "sys_object_id": "Identificador de objeto",
-    "sys_uptime": "Tiempo activo (centésimas de segundo)",
+    "sys_uptime": "Tiempo activo",
     "enterprise_number": "Número de empresa",
     "chassis_id_subtype": "Subtipo del identificador de chasis",
     "chassis_id": "Identificador de chasis",
@@ -181,6 +183,12 @@
     "query": "Consulta",
     "query_ref": "consulta {{query}} de la ejecución {{run}}",
     "seen_at": "Visto por última vez",
-    "evidence": "Evidencia"
+    "evidence": "Evidencia",
+    "raw": "Valor original"
+  },
+  "vendor_status": {
+    "known": "en el registro de fabricantes",
+    "generic_agent": "agente SNMP genérico (no se conoce el fabricante del equipo)",
+    "not_in_registry": "número de empresa no registrado"
   }
 }

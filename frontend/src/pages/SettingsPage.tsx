@@ -124,7 +124,7 @@ function DiscoverySettingsForm() {
             aria-describedby={errors[name] ? `e-${name}` : undefined}
             onChange={(e) => setForm({ ...form, [name]: e.target.value })}
           />
-          <small>{t('settings.one_per_line')}</small>
+          <small>{t(name === 'seeds' ? 'settings.seeds_help' : 'settings.one_per_line')}</small>
           <FieldError id={`e-${name}`} messages={errors[name]} />
         </div>
       ))}

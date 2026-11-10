@@ -8,10 +8,11 @@
 // Device detail (RF-11, RF-29): attribute groups, addresses and interfaces,
 // every value with its origin, age and staleness, method and source on demand.
 import { useEffect, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router'
 
-import { api, ApiError, type DeviceDetail, type Group, type RecordItem } from '../api'
+import { api, ApiError, type DeviceDetail, type Group, type RecordItem, type Value } from '../api'
 import { displayValue, Provenance } from '../Provenance'
 
 const DEVICE_GROUPS = ['system', 'chassis', 'vendor', 'model'] as const
@@ -25,6 +26,31 @@ const INTERFACE_COLUMNS: [string, string][] = [
   ['base', 'phys_address'],
 ]
 
+const VENDOR_STATUSES = ['known', 'generic_agent', 'not_in_registry']
+
+// sysUpTime is in hundredths of a second (TimeTicks).
+export function uptimeParts(ticks: number): { days: number; hours: number; minutes: number } {
+  const minutesTotal = Math.floor(ticks / 6_000)
+  return {
+    days: Math.floor(minutesTotal / 1_440),
+    hours: Math.floor((minutesTotal % 1_440) / 60),
+    minutes: minutesTotal % 60,
+  }
+}
+
+// Text shown for a field, and the raw value when the text is a translation
+// or a conversion of it (the raw value stays in the provenance details).
+function shown(field: string, value: Value, t: TFunction): { text: string; raw?: string } {
+  if (value.state !== 'value') return { text: displayValue(value) }
+  if (field === 'vendor_status' && VENDOR_STATUSES.includes(String(value.value))) {
+    return { text: t(`vendor_status.${String(value.value)}`), raw: String(value.value) }
+  }
+  if (field === 'sys_uptime' && typeof value.value === 'number') {
+    return { text: t('device.uptime', uptimeParts(value.value)), raw: String(value.value) }
+  }
+  return { text: displayValue(value) }
+}
+
 function GroupTable({ name, group }: { name: string; group: Group | null }) {
   const { t } = useTranslation()
   return (
@@ -35,14 +61,17 @@ function GroupTable({ name, group }: { name: string; group: Group | null }) {
       ) : (
         <table>
           <tbody>
-            {Object.entries(group.fields).map(([field, value]) => (
-              <tr key={field}>
-                <th scope="row">{t(`fields.${field}`, { defaultValue: field })}</th>
-                <td data-field={field}>
-                  {displayValue(value)} <Provenance value={value} />
-                </td>
-              </tr>
-            ))}
+            {Object.entries(group.fields).map(([field, value]) => {
+              const { text, raw } = shown(field, value, t)
+              return (
+                <tr key={field}>
+                  <th scope="row">{t(`fields.${field}`, { defaultValue: field })}</th>
+                  <td data-field={field}>
+                    {text} <Provenance value={value} raw={raw} />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       )}

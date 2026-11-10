@@ -17,6 +17,7 @@ import { AppRoutes } from './App'
 import { createI18n } from './i18n'
 import en from './locales/en.json'
 import es from './locales/es.json'
+import { uptimeParts } from './pages/DevicePage'
 import { Provenance } from './Provenance'
 
 type Reply = { status?: number; body: unknown } | ((init?: RequestInit) => { status?: number; body: unknown })
@@ -311,4 +312,83 @@ describe('provenance', () => {
     expect(cell.textContent).toContain('srx1500')
     expect(within(cell).getByText(en.provenance.inferred)).toBeTruthy()
   })
+})
+
+describe('fixes on the settings and device screens', () => {
+  it('says that seeds are single IP addresses, and ranges keep their own help', async () => {
+    for (const [language, texts] of [
+      ['es', es],
+      ['en', en],
+    ] as const) {
+      stubApi({
+        'GET /api/settings/discovery': { body: SETTINGS },
+        'GET /api/settings/credential': { body: CREDENTIAL },
+      })
+      await renderAt('/settings', language)
+      const seeds = screen.getByLabelText(texts.settings.seeds)
+      expect(seeds.parentElement?.textContent).toContain(texts.settings.seeds_help)
+      expect(seeds.parentElement?.textContent).not.toContain(texts.settings.one_per_line)
+      const ranges = screen.getByLabelText(texts.settings.allowed_ranges)
+      expect(ranges.parentElement?.textContent).toContain(texts.settings.one_per_line)
+      cleanup()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('splits sysUpTime hundredths of a second into days, hours and minutes', () => {
+    expect(uptimeParts(3818839757)).toEqual({ days: 441, hours: 23, minutes: 53 })
+    expect(uptimeParts(0)).toEqual({ days: 0, hours: 0, minutes: 0 })
+    expect(uptimeParts(8_640_000 + 360_000 + 6_000 - 1)).toEqual({ days: 1, hours: 1, minutes: 0 })
+  })
+
+  function deviceWith(status: string) {
+    const group = (source: string, fields: Record<string, Value>) => ({
+      first_seen_at: '', last_seen_at: '', stale: false, presence: 'present', source, fields,
+    })
+    return {
+      id: 1,
+      groups: {
+        system: group('SNMPv2-MIB::system', { sys_name: value('srx-01'), sys_uptime: value(3818839757) }),
+        chassis: null,
+        vendor: group('SNMPv2-MIB::system', {
+          vendor_name: value('Juniper', { origin: 'inferred', method: 'enterprise-registry' }),
+          vendor_status: value(status, { origin: 'inferred', method: 'enterprise-registry' }),
+        }),
+        model: null,
+      },
+      addresses: [],
+      interfaces: [],
+    }
+  }
+
+  for (const [language, texts] of [
+    ['es', es],
+    ['en', en],
+  ] as const) {
+    for (const status of ['known', 'generic_agent', 'not_in_registry'] as const) {
+      it(`translates vendor status ${status} in ${language} and keeps the raw value in the details`, async () => {
+        stubApi({ 'GET /api/devices/1': { body: deviceWith(status) } })
+        await renderAt('/devices/1', language)
+        const cell = document.querySelector('[data-field="vendor_status"]') as HTMLElement
+        const details = cell.querySelector('details') as HTMLDetailsElement
+        const shown = cell.textContent!.replace(details.textContent!, '')
+        expect(shown).toContain(texts.vendor_status[status])
+        expect(shown).not.toContain(status)
+        expect(within(details).getByText(texts.provenance.raw)).toBeTruthy()
+        expect(within(details).getByText(status)).toBeTruthy()
+      })
+    }
+
+    it(`shows sysUpTime as days, hours and minutes in ${language}, raw value in the details`, async () => {
+      stubApi({ 'GET /api/devices/1': { body: deviceWith('known') } })
+      await renderAt('/devices/1', language)
+      const cell = document.querySelector('[data-field="sys_uptime"]') as HTMLElement
+      const details = cell.querySelector('details') as HTMLDetailsElement
+      const shown = cell.textContent!.replace(details.textContent!, '')
+      expect(shown).toContain('441 d 23 h 53 min')
+      expect(shown).not.toContain('3818839757')
+      expect(within(details).getByText('3818839757')).toBeTruthy()
+      expect(screen.getByText(texts.fields.sys_uptime)).toBeTruthy()
+    })
+  }
 })

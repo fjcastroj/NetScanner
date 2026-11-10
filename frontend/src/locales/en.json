@@ -47,7 +47,8 @@
     "line": "line {{n}}",
     "save": "Save settings",
     "saved": "Settings saved.",
-    "invalid": "Some values were rejected; see the messages next to each field."
+    "invalid": "Some values were rejected; see the messages next to each field.",
+    "seeds_help": "One IP address per line (no ranges)."
   },
   "credential": {
     "title": "SNMP credential",
@@ -145,13 +146,14 @@
       "address_table": "Address table",
       "management": "Management address"
     },
-    "interfaces": "Interfaces ({{count}})"
+    "interfaces": "Interfaces ({{count}})",
+    "uptime": "{{days}} d {{hours}} h {{minutes}} min"
   },
   "fields": {
     "sys_name": "Name",
     "sys_descr": "Description",
     "sys_object_id": "Object identifier",
-    "sys_uptime": "Uptime (hundredths of a second)",
+    "sys_uptime": "Uptime",
     "enterprise_number": "Enterprise number",
     "chassis_id_subtype": "Chassis id subtype",
     "chassis_id": "Chassis id",
@@ -181,6 +183,12 @@
     "query": "Query",
     "query_ref": "query {{query}} of run {{run}}",
     "seen_at": "Last seen",
-    "evidence": "Evidence"
+    "evidence": "Evidence",
+    "raw": "Raw value"
+  },
+  "vendor_status": {
+    "known": "in the vendor registry",
+    "generic_agent": "generic SNMP agent (the hardware vendor is not known)",
+    "not_in_registry": "enterprise number not in the registry"
   }
 }

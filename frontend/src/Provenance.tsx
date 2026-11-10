@@ -49,7 +49,7 @@ function fragments(value: Value): [string, string][] {
   return found
 }
 
-export function Provenance({ value }: { value: Value }) {
+export function Provenance({ value, raw }: { value: Value; raw?: string }) {
   const { t, i18n } = useTranslation()
   if (value.state === 'unknown' || value.origin === undefined) {
     return <span className="provenance provenance-unknown">{t('provenance.unknown')}</span>
@@ -72,6 +72,14 @@ export function Provenance({ value }: { value: Value }) {
       <details className="provenance-details">
         <summary>{t('provenance.details')}</summary>
         <dl>
+          {raw !== undefined && (
+            <>
+              <dt>{t('provenance.raw')}</dt>
+              <dd>
+                <code>{raw}</code>
+              </dd>
+            </>
+          )}
           <dt>{t('provenance.method')}</dt>
           <dd>{value.method ?? t('provenance.no_method')}</dd>
           <dt>{t('provenance.source')}</dt>
