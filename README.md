@@ -49,11 +49,60 @@ cp .env.example .env
 docker compose up -d --build --wait
 ```
 
-Open <http://127.0.0.1:8080>. Only the web interface is published, on
-`127.0.0.1:8080` by default; change `NETSCANNER_WEB_BIND` in `.env` to expose
-it deliberately. The services refuse to start while a required secret is
-missing or still `change-me`. Data is kept in the `db-data` volume across
+Create the administrator account once, from the server console. The
+password is asked twice and never echoed; it is never accepted as a
+command-line argument:
+
+```sh
+docker compose run --rm api python -m netscanner.admin create --username <name>
+```
+
+Then open <http://localhost:8080>, the official local address (Docker
+listens on `127.0.0.1:8080`), and log in. To replace a lost password, which
+also ends every open session:
+
+```sh
+docker compose run --rm api python -m netscanner.admin reset-password
+```
+
+For automation, `--password-stdin` reads the password once from standard
+input instead.
+
+Only the web interface is published, on `127.0.0.1:8080` by default
+(`NETSCANNER_WEB_BIND`). The services refuse to start while a required secret
+is missing or still `change-me`. Data is kept in the `db-data` volume across
 restarts; `docker compose down -v` deletes it.
+
+## Security and exposure
+
+- **One local administrator.** Every route under `/api` needs a session
+  except health, status, login and logout. Sessions are kept on the server and
+  end after 8 hours without use, 24 hours after login, on logout or on a
+  password reset (`NETSCANNER_SESSION_IDLE`, `NETSCANNER_SESSION_MAX_AGE`).
+- **The session cookie is `Secure` by default**
+  (`NETSCANNER_SESSION_COOKIE_SECURE=true`), so it is not sent over plain HTTP
+  from another machine. Current Chromium and Firefox keep a `Secure` cookie on
+  `http://localhost`; Safari does not. `NETSCANNER_SESSION_COOKIE_SECURE=false`
+  is accepted only while `NETSCANNER_WEB_BIND` is a loopback address
+  (`127.0.0.1:<port>` or `[::1]:<port>`); otherwise the API refuses to start.
+  This check prevents a configuration mistake; it cannot see a hand-edited
+  `ports:` in the Compose file.
+- **Beyond the local machine, use a reverse proxy with TLS** in front of the
+  `web` service. NetScanner does not terminate TLS. Set
+  `NETSCANNER_PUBLIC_ORIGIN` to the origin the browser uses, for example
+  `https://netscanner.example`, so that the cross-site check accepts it.
+  Without it, only `http://localhost:<port>` and `http://127.0.0.1:<port>`
+  are accepted. Behind such a proxy every client shares one login-attempt
+  window, because the API sees the proxy's address.
+- **Lab mode has ended.** Until administrator authentication existed, the
+  API had no login, so NetScanner ran in *lab mode*: it accepted only the lab
+  range 10.99.0.0/24 and loopback as allowed ranges, and every screen showed a
+  lab mode notice. That guard was removed by `add-admin-authentication`,
+  because every administrative route now requires a session, and a test that
+  enumerates every route proves it. Real ranges can be saved by the logged-in
+  administrator; every other scope rule (deny by default, exclusions, special
+  addresses, scope frozen per run, enforcement below every SNMP use) is
+  unchanged. See [docs/architecture.md](docs/architecture.md).
 
 ## Development
 
@@ -97,9 +146,12 @@ npm run dev                   # proxies /api to http://127.0.0.1:8000
 Builds and runs the whole stack together with the SNMP lab
 (`docker-compose.lab.yml`), with throwaway secrets, its own Compose project
 name and a free host port. It checks health, exposure, non-root containers,
-recovery after a database outage and data persistence, then discovers the
-lab through the API until the run completes and the three lab devices are
-listed, and removes everything at the end:
+recovery after a database outage and data persistence. Then, through the web
+port, it checks that the protected routes answer 401, creates the
+administrator with `--password-stdin`, logs in, checks the cross-site
+protection, discovers the lab until the run completes and the three lab
+devices are listed, logs out and checks the routes answer 401 again. It
+removes everything at the end:
 
 ```sh
 python scripts/stack_test.py

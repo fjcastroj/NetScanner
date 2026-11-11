@@ -169,6 +169,34 @@ def api_obtains_no_client(module: str, tree: ast.AST) -> list[str]:
     return found
 
 
+AUTH = "netscanner.auth"
+SESSION_COOKIE = "netscanner_session"
+
+
+def password_library_imports(module: str, tree: ast.AST) -> list[str]:
+    """Only netscanner.auth imports argon2 (add-admin-authentication D1)."""
+    if _within(module, AUTH):
+        return []
+    return [
+        f"{module} imports the password hashing library ({name})"
+        for name in _imports(tree)
+        if name.split(".")[0] == "argon2"
+    ]
+
+
+def session_cookie_reads(module: str, tree: ast.AST) -> list[str]:
+    """No module outside netscanner.auth reads cookies or names the session cookie."""
+    if _within(module, AUTH):
+        return []
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "cookies":
+            found.append(f"{module} reads request cookies")
+        if isinstance(node, ast.Constant) and node.value == SESSION_COOKIE:
+            found.append(f"{module} names the session cookie")
+    return found
+
+
 RULES = [
     snmp_library_imports,
     authorized_target_construction,
@@ -176,6 +204,8 @@ RULES = [
     credential_decryption,
     dynamic_imports,
     api_obtains_no_client,
+    password_library_imports,
+    session_cookie_reads,
 ]
 
 
@@ -285,6 +315,14 @@ def test_every_production_module_is_inspected() -> None:
             "client = create_client(settings, resolver)",
             "obtains an SNMP client",
         ),
+        ("netscanner.api.routes.auth", "from argon2 import PasswordHasher", "password hashing"),
+        ("netscanner.admin.__main__", "import argon2.profiles", "password hashing"),
+        (
+            "netscanner.api.routes.auth",
+            "token = request.cookies.get(name)",
+            "reads request cookies",
+        ),
+        ("netscanner.api.app", "name = 'netscanner_session'", "names the session cookie"),
     ],
 )
 def test_rule_detects_and_names_the_module(module: str, source: str, expected: str) -> None:
@@ -309,6 +347,8 @@ def test_rule_detects_and_names_the_module(module: str, source: str, expected: s
         ("netscanner.collector.service", "client = create_client(settings, resolver)"),
         ("netscanner.collector.__main__", "await run_collector(settings, stop)"),
         ("netscanner.collector.__main__", "await run_collector(settings, stop, engine=engine)"),
+        ("netscanner.auth.passwords", "from argon2 import PasswordHasher"),
+        ("netscanner.auth.guard", "token = request.cookies.get('netscanner_session')"),
     ],
 )
 def test_allowed_uses_pass(module: str, source: str) -> None:

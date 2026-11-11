@@ -5,16 +5,20 @@
  * Computer Engineering, Universidad Internacional de La Rioja (UNIR).
  */
 
-// Router and layout (design D11). The lab mode banner belongs to the layout,
-// so no page can be shown without it.
+// Router and layout (design D11). With add-admin-authentication (D8) the
+// layout shows the login screen whenever there is no valid session, for any
+// URL, so no page and none of its data appear without one; after logging in
+// the page of the current URL is shown. The lab mode banner is gone (D9).
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router'
 
+import { SessionProvider, useSession } from './auth'
 import { LANGUAGES, type Language } from './i18n'
 import { DevicePage } from './pages/DevicePage'
 import { DevicesPage } from './pages/DevicesPage'
 import { DiscoveryPage } from './pages/DiscoveryPage'
+import { LoginPage } from './pages/LoginPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { useApiStatus } from './useApiStatus'
 
@@ -48,11 +52,18 @@ function StatusIndicator() {
   )
 }
 
-export function LabBanner() {
+function UserMenu() {
   const { t } = useTranslation()
+  const { session, logout } = useSession()
+  if (session.state !== 'authenticated') return null
   return (
-    <div className="lab-banner" role="note" aria-label={t('lab.label')}>
-      <strong>{t('lab.title')}</strong> {t('lab.text')}
+    <div className="user-menu">
+      <span className="user-name" aria-label={t('session.user')}>
+        {session.username}
+      </span>
+      <button type="button" onClick={() => void logout()}>
+        {t('session.logout')}
+      </button>
     </div>
   )
 }
@@ -65,6 +76,7 @@ const PAGES = [
 
 export function Layout() {
   const { t, i18n } = useTranslation()
+  const { session } = useSession()
 
   useEffect(() => {
     document.documentElement.lang = i18n.resolvedLanguage ?? i18n.language
@@ -81,26 +93,38 @@ export function Layout() {
         <div className="header-tools">
           <StatusIndicator />
           <LanguageSelector />
+          <UserMenu />
         </div>
       </header>
-      <LabBanner />
       <nav className="nav" aria-label={t('nav.label')}>
-        <ul>
-          {PAGES.map(([path, label]) => (
-            <li key={path}>
-              <NavLink to={path}>{t(label)}</NavLink>
-            </li>
-          ))}
-        </ul>
+        {session.state === 'authenticated' && (
+          <ul>
+            {PAGES.map(([path, label]) => (
+              <li key={path}>
+                <NavLink to={path}>{t(label)}</NavLink>
+              </li>
+            ))}
+          </ul>
+        )}
       </nav>
       <main className="main">
-        <Outlet />
+        {session.state === 'checking' && <p>{t('common.loading')}</p>}
+        {session.state === 'anonymous' && <LoginPage />}
+        {session.state === 'authenticated' && <Outlet />}
       </main>
     </div>
   )
 }
 
 export function AppRoutes() {
+  return (
+    <SessionProvider>
+      <AppRouteTable />
+    </SessionProvider>
+  )
+}
+
+function AppRouteTable() {
   return (
     <Routes>
       <Route element={<Layout />}>

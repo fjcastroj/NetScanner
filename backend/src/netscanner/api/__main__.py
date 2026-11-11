@@ -9,11 +9,13 @@ from __future__ import annotations
 import uvicorn
 
 from netscanner.api.app import create_app
+from netscanner.core.config import exit_if_invalid_for_api
 from netscanner.core.startup import bootstrap
 
 
 def main() -> None:
     settings = bootstrap("api")
+    exit_if_invalid_for_api(settings)  # the Secure cookie and the bind address (D3)
     uvicorn.run(
         create_app(settings),
         host=settings.api_host,

@@ -9,10 +9,11 @@ port, so it never touches a stack already running. The stack and its volumes
 are removed at the end, even when a check fails.
 
 The stack runs with the lab override file, as the snmp-lab spec delivers it
-(``-f docker-compose.yml -f docker-compose.lab.yml``), and ends with a
-discovery of the lab through the API: settings and credential saved, a run
-until completed and the three lab devices in the list
-(add-discovery-and-basic-inventory, task 8.1).
+(``-f docker-compose.yml -f docker-compose.lab.yml``), and ends with the
+authentication sequence of add-admin-authentication (task 7.1) through the
+web port: the protected routes answer 401, the administrator is created
+with ``--password-stdin``, login, the cross-site check, a lab discovery with
+the three lab devices in the list, logout, and 401 again.
 
 Usage: python scripts/stack_test.py
 """
@@ -53,6 +54,8 @@ LAB_SETTINGS = {
     "max_datagrams": 50000,
 }
 LAB_DEVICES = {"10.99.0.13", "10.99.0.2", "10.99.0.3"}
+STACK_ADMIN = "stack-admin"
+SESSION_COOKIE = "netscanner_session"
 RUN_SECONDS = 180
 
 
@@ -76,9 +79,12 @@ class Stack:
         self.env_file = env_file
         self.port = port
         self.base_url = f"http://127.0.0.1:{port}"
+        self.cookie: str | None = None  # the session token, kept as a browser would
         self.health_url = f"{self.base_url}/api/health"
 
-    def compose(self, *args: str, check: bool = True, capture: bool = False) -> str:
+    def compose(
+        self, *args: str, check: bool = True, capture: bool = False, input: str | None = None
+    ) -> str:
         cmd = [
             "docker", "compose", "--progress", "quiet",
             "--project-name", self.project,
@@ -92,6 +98,7 @@ class Stack:
             cwd=ROOT,
             text=True,
             capture_output=capture,
+            input=input,
             check=False,
             env={k: v for k, v in os.environ.items() if not k.startswith("NETSCANNER_")},
         )
@@ -116,23 +123,56 @@ class Stack:
         except (urllib.error.URLError, OSError):
             return 0, None
 
-    def api(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
-        """A JSON request to the API through the web port."""
+    def api(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        *,
+        header: bool = True,
+        origin: str | None = None,
+        extra: dict[str, str] | None = None,
+    ) -> tuple[int, dict]:
+        """A JSON request through the web port, with the session cookie if there is one.
+
+        Like the web interface, it sends X-NetScanner-Request: 1 unless
+        header is false (add-admin-authentication D6).
+        """
         data = None if body is None else json.dumps(body).encode()
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if header:
+            headers["X-NetScanner-Request"] = "1"
+        if origin is not None:
+            headers["Origin"] = origin
+        if self.cookie is not None:
+            headers["Cookie"] = f"{SESSION_COOKIE}={self.cookie}"
+        headers.update(extra or {})
         req = urllib.request.Request(  # noqa: S310 - local test URL
-            self.base_url + path,
-            data=data,
-            method=method,
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            self.base_url + path, data=data, method=method, headers=headers
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+                self._keep_cookie(resp.headers.get_all("Set-Cookie") or [])
                 return resp.status, json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             try:
                 return exc.code, json.loads(exc.read())
             except ValueError:
                 return exc.code, {}
+
+    def _keep_cookie(self, set_cookies: list[str]) -> None:
+        for value in set_cookies:
+            name, _, rest = value.partition("=")
+            if name.strip() != SESSION_COOKIE:
+                continue
+            token = rest.split(";", 1)[0].strip().strip('"')
+            self.cookie = token or None
+
+    def login(self, password: str) -> int:
+        status, _ = self.api(
+            "POST", "/api/auth/login", {"username": STACK_ADMIN, "password": password}
+        )
+        return status
 
     def wait_health(self, status: int, body: dict, timeout: float) -> float:
         start = time.monotonic()
@@ -263,15 +303,69 @@ def run_checks(stack: Stack) -> None:
     stack.psql(f"DROP TABLE {MARKER_TABLE}")
     check(stack.health() == (200, HEALTH_OK), "health 200 after restart")
 
-    lab_discovery(stack)
+    authenticated_lab_discovery(stack)
 
 
-def lab_discovery(stack: Stack) -> None:
-    step("lab discovery through the API")
+# Settings, credential, run and inventory routes: 401 without a session.
+PROTECTED = (
+    ("GET", "/api/settings/discovery", None),
+    ("PUT", "/api/settings/discovery", LAB_SETTINGS),
+    ("GET", "/api/settings/credential", None),
+    ("PUT", "/api/settings/credential", {"version": "2c", "community": LAB_COMMUNITY}),
+    ("GET", "/api/runs", None),
+    ("POST", "/api/runs", None),
+    ("GET", "/api/devices", None),
+    ("GET", "/api/auth/session", None),
+)
+
+
+def all_protected_refused(stack: Stack, when: str) -> None:
+    codes = {f"{m} {p}": stack.api(m, p, b)[0] for m, p, b in PROTECTED}
+    check(set(codes.values()) == {401}, f"{len(codes)} protected routes answer 401 {when}")
+
+
+def authenticated_lab_discovery(stack: Stack) -> None:
+    step("authentication through the web port")
     status, body = stack.api("GET", "/api/status")
-    check(status == 200 and body.get("lab_mode") is True, "status reports lab mode")
-    status, _ = stack.api("PUT", "/api/settings/discovery", LAB_SETTINGS)
-    check(status == 200, "discovery settings saved")
+    check(
+        status == 200 and body == {"authentication": True, "admin_exists": False},
+        "status reports authentication and no administrator yet",
+    )
+    all_protected_refused(stack, "before the administrator exists")
+    password = secrets.token_urlsafe(24)  # throwaway, never printed
+    out = stack.compose(
+        "run", "--rm", "-T", "api",
+        "python", "-m", "netscanner.admin", "create", "--username", STACK_ADMIN,
+        "--password-stdin",
+        capture=True, input=password + "\n",
+    )  # fmt: skip
+    check(password not in out, f"administrator {STACK_ADMIN} created with --password-stdin")
+    check(stack.api("GET", "/api/status")[1].get("admin_exists") is True, "status: admin exists")
+    all_protected_refused(stack, "before login")
+    check(stack.login(password + "x") == 401, "a wrong password answers 401")
+    logged_in = stack.login(password) == 200 and stack.cookie is not None
+    check(logged_in, "login sets the session cookie")
+
+    step("cross-site check through the web port")
+    cross_site = {
+        "missing header": stack.api(
+            "PUT", "/api/settings/discovery", LAB_SETTINGS, header=False
+        )[0],
+        "other Origin": stack.api(
+            "PUT", "/api/settings/discovery", LAB_SETTINGS, origin="https://evil.example"
+        )[0],
+        "forged forwarded host": stack.api(
+            "PUT", "/api/settings/discovery", LAB_SETTINGS,
+            origin="http://evil.example", extra={"X-Forwarded-Host": "evil.example"},
+        )[0],
+    }  # fmt: skip
+    check(set(cross_site.values()) == {403}, f"cross-site requests refused: {cross_site}")
+    status, _ = stack.api(
+        "PUT", "/api/settings/discovery", LAB_SETTINGS, origin=f"http://127.0.0.1:{stack.port}"
+    )
+    check(status == 200, "same-origin request with the header accepted: discovery settings saved")
+
+    step("lab discovery after login")
     status, body = stack.api(
         "PUT", "/api/settings/credential", {"version": "2c", "community": LAB_COMMUNITY}
     )
@@ -308,6 +402,15 @@ def lab_discovery(stack: Stack) -> None:
         flush=True,
     )
 
+    step("logout")
+    old = stack.cookie
+    status, _ = stack.api("POST", "/api/auth/logout")
+    check(status == 200 and stack.cookie is None, "logout clears the session cookie")
+    all_protected_refused(stack, "after logout")
+    stack.cookie = old
+    check(stack.api("GET", "/api/devices")[0] == 401, "the old session token is refused")
+    stack.cookie = None
+
 
 def main(argv: list[str] | None = None) -> int:
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
@@ -329,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         stack = Stack(project, env_file, port)
         print(f"stack test: project {project}, web port {port}", flush=True)

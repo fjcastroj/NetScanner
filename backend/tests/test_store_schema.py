@@ -317,3 +317,92 @@ async def test_run_device_reason_rules(engine: AsyncEngine, values: dict, constr
                     **values,
                 )
             )
+
+
+# --- Migration 0005: administrator authentication (add-admin-authentication) ---
+
+AUTH_TABLES = {"admin_account", "sessions", "login_attempts"}
+
+
+def test_migration_0005_upgrade_and_downgrade(test_db: TestDatabase) -> None:
+    async def tables(settings) -> set[str]:
+        engine = create_engine(settings)
+        try:
+            return await _tables(engine)
+        finally:
+            await engine.dispose()
+
+    with fresh_database(test_db) as settings:
+        assert upgrade(settings) == 0
+        at_head = asyncio.run(tables(settings))
+        assert AUTH_TABLES <= at_head
+        command.downgrade(alembic_config(settings), "0004")
+        assert asyncio.run(tables(settings)) == at_head - AUTH_TABLES
+        assert upgrade(settings) == 0
+        assert asyncio.run(tables(settings)) == at_head
+
+
+async def test_admin_account_has_at_most_one_row(engine: AsyncEngine) -> None:
+    insert_account = text(
+        "INSERT INTO admin_account (id, username, password_hash, created_at, password_changed_at)"
+        " VALUES (:id, :username, 'x', now(), now())"
+    )
+    async with engine.begin() as conn:
+        await conn.execute(insert_account, {"id": 1, "username": "admin"})
+    async with engine.begin() as conn:
+        with pytest.raises(IntegrityError, match="ck_admin_account_single_row"):
+            await conn.execute(insert_account, {"id": 2, "username": "other"})
+    async with engine.begin() as conn:
+        with pytest.raises(IntegrityError, match="pk_admin_account"):
+            await conn.execute(insert_account, {"id": 1, "username": "other"})
+
+
+# Longer than 64 characters is refused by the column length itself.
+@pytest.mark.parametrize("username", ["", "with space", "ad;min", "admin\n"])
+async def test_admin_account_username_rule(engine: AsyncEngine, username: str) -> None:
+    async with engine.begin() as conn:
+        with pytest.raises(IntegrityError, match="ck_admin_account_username"):
+            await conn.execute(
+                text(
+                    "INSERT INTO admin_account"
+                    " (id, username, password_hash, created_at, password_changed_at)"
+                    " VALUES (1, :u, 'x', now(), now())"
+                ),
+                {"u": username},
+            )
+
+
+@pytest.mark.parametrize(
+    ("token_hash", "times", "constraint"),
+    [
+        ("A" * 64, "now(), now(), now() + interval '1 hour'", "ck_sessions_token_hash"),
+        ("0" * 63, "now(), now(), now() + interval '1 hour'", "ck_sessions_token_hash"),
+        (
+            "0" * 64,
+            "now(), now() - interval '1 hour', now() + interval '1 hour'",
+            "ck_sessions_times",
+        ),
+        ("0" * 64, "now(), now(), now()", "ck_sessions_times"),
+    ],
+)
+async def test_session_rules(
+    engine: AsyncEngine, token_hash: str, times: str, constraint: str
+) -> None:
+    columns = "sessions (token_hash, created_at, last_used_at, expires_at)"
+    # ``times`` are constant SQL fragments of this test; the token hash is bound.
+    sql = f"INSERT INTO {columns} VALUES (:h, {times})"  # noqa: S608
+    async with engine.begin() as conn:
+        with pytest.raises(IntegrityError, match=constraint):
+            await conn.execute(text(sql), {"h": token_hash})
+
+
+async def test_session_token_hash_unique(engine: AsyncEngine) -> None:
+    row = text(
+        "INSERT INTO sessions (token_hash, created_at, last_used_at, expires_at)"
+        " VALUES (:h, now(), now(), now() + interval '1 hour')"
+    )
+    async with engine.begin() as conn:
+        await conn.execute(row, {"h": "a" * 64})
+    async with engine.begin() as conn:
+        with pytest.raises(IntegrityError, match="uq_sessions_token_hash"):
+            await conn.execute(row, {"h": "a" * 64})

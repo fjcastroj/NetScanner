@@ -49,7 +49,7 @@ body {
 .shell {
   display: grid;
   grid-template-columns: 220px 1fr;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto 1fr;
   min-height: 100vh;
 }
 
@@ -139,13 +139,29 @@ body {
   font-weight: 600;
 }
 
-.lab-banner {
-  grid-column: 1 / -1;
-  padding: 0.6rem 1.25rem;
+.user-menu {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.user-name {
+  font-weight: 600;
+}
+
+.login {
+  max-width: 420px;
+}
+
+.no-account code {
+  display: block;
+  overflow-x: auto;
+  padding: 0.5rem;
   background: var(--warn-bg);
   color: var(--warn-text);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.9rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
 }
 
 .main h2 {

@@ -5,7 +5,9 @@
 """FastAPI application: health, the routes of design D10 and generic error responses.
 
 Request validation errors give the field and the reason only, never the
-submitted value (design D10).
+submitted value (design D10). Every ``/api`` route needs a session except the
+public list, and protected responses are never cached (add-admin-authentication
+D4).
 """
 
 from __future__ import annotations
@@ -21,6 +23,9 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 
 from netscanner.api.common import Services, problems_response
 from netscanner.api.routes import router
+from netscanner.auth import passwords
+from netscanner.auth.guard import PUBLIC_ROUTES
+from netscanner.auth.service import AuthService
 from netscanner.core.config import Settings
 from netscanner.core.db import classify_db_error, create_engine, ping
 from netscanner.credential_store import CredentialService
@@ -43,6 +48,9 @@ def create_app(settings: Settings) -> FastAPI:
             credentials=CredentialService(app.state.engine, settings.secret_key.get_secret_value()),
             ceilings=DiscoveryCeilings.from_settings(settings),
         )
+        app.state.auth = AuthService(app.state.engine, settings)
+        # Made before the first login, so no login pays for it (design D5).
+        passwords.dummy_hash()
         try:
             yield
         finally:
@@ -72,6 +80,17 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse(HEALTH_OK)
 
     app.include_router(router)
+
+    @app.middleware("http")
+    async def no_store(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if (path == "/api" or path.startswith("/api/")) and (
+            request.method,
+            path,
+        ) not in PUBLIC_ROUTES:
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:

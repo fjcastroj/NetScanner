@@ -4,17 +4,17 @@
 # Computer Engineering, Universidad Internacional de La Rioja (UNIR).
 """Which addresses NetScanner may query (snmp-scope spec, RNF-03, RNF-06).
 
-Pure code with no I/O: the scope policy, authorised targets, the lab-only
-guard and the validation and freezing of discovery settings.
+Pure code with no I/O: the scope policy, authorised targets and the
+validation and freezing of discovery settings. The lab-only guard of
+add-discovery-and-basic-inventory was removed by add-admin-authentication
+(design D9), once every administrative route required a session.
 """
 
 from netscanner.scope.policy import (
-    LAB_RANGES,
     AuthorizedTarget,
     Rejection,
     ScopeError,
     ScopePolicy,
-    check_lab_guard,
 )
 from netscanner.scope.settings import (
     DiscoveryCeilings,
@@ -27,7 +27,6 @@ from netscanner.scope.settings import (
 )
 
 __all__ = [
-    "LAB_RANGES",
     "AuthorizedTarget",
     "DiscoveryCeilings",
     "DiscoverySettings",
@@ -36,7 +35,6 @@ __all__ = [
     "ScopeError",
     "ScopePolicy",
     "SettingsError",
-    "check_lab_guard",
     "check_run_limits",
     "run_parameters_for",
     "validate_settings",

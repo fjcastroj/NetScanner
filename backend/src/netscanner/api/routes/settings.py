@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 
 from netscanner.api.common import Payload, Services, Svc, problems_response
 from netscanner.credential_store import CredentialDescription
-from netscanner.scope import LAB_RANGES, SettingsError, validate_settings
+from netscanner.scope import SettingsError, validate_settings
 from netscanner.snmp.credentials import CredentialError
 
 router = APIRouter(prefix="/settings")
@@ -33,7 +33,7 @@ def _ceilings(svc: Services) -> dict[str, int]:
 
 async def _settings_body(svc: Services) -> dict[str, Any]:
     stored = await svc.store.read_discovery_settings()
-    return {**stored, "ceilings": _ceilings(svc), "lab_ranges": [str(n) for n in LAB_RANGES]}
+    return {**stored, "ceilings": _ceilings(svc)}
 
 
 @router.get("/discovery")

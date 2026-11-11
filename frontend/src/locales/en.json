@@ -20,11 +20,6 @@
     "available": "Service available",
     "unavailable": "Service unavailable"
   },
-  "lab": {
-    "label": "Lab mode notice",
-    "title": "Lab mode without authentication.",
-    "text": "Only the lab ranges can be queried until administrator authentication exists. Do not expose this application outside the local host."
-  },
   "common": {
     "loading": "Loading…"
   },
@@ -97,7 +92,7 @@
   },
   "run_errors": {
     "empty_scope": "no allowed range",
-    "scope_not_allowed": "range outside the lab",
+    "scope_not_allowed": "scope that cannot be used",
     "limits_not_allowed": "limits not allowed",
     "credential_unreadable": "credential unreadable",
     "database_error": "database error",
@@ -190,5 +185,19 @@
     "known": "in the vendor registry",
     "generic_agent": "generic SNMP agent (the hardware vendor is not known)",
     "not_in_registry": "enterprise number not in the registry"
+  },
+  "login": {
+    "title": "Log in",
+    "username": "User name",
+    "password": "Password",
+    "submit": "Log in",
+    "failed": "The user name or password is not correct.",
+    "limited": "Too many failed attempts. Try again after {{time}}.",
+    "error": "The service could not be reached. Try again later.",
+    "no_account": "No administrator account exists yet. Create it on the server, from the console:"
+  },
+  "session": {
+    "user": "Logged in as",
+    "logout": "Log out"
   }
 }
