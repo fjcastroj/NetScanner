@@ -71,7 +71,8 @@ across the network by accident. Whether a browser keeps a `Secure` cookie
 set over `http://localhost` is a separate rule from treating localhost as a
 secure context: current Chromium and Firefox do, and Safari does not
 (MDN). This is a **hypothesis** for the author's browser, checked in task
-7.3. The official local address is `http://localhost:8080`, although Docker
+7.3: it holds for Google Chrome 157 on Windows (see Open Questions). The
+official local address is `http://localhost:8080`, although Docker
 listens on `127.0.0.1:8080`.
 
 `NETSCANNER_SESSION_COOKIE_SECURE=false` is accepted only when
@@ -189,6 +190,11 @@ creates the administrator.
 ## Open Questions
 
 - Whether the author's browser keeps a `Secure` cookie on
-  `http://localhost:8080` (D3, task 7.3).
+  `http://localhost:8080` (D3, task 7.3). **Answered for Google Chrome
+  157.0.8103.51 (64-bit) on Windows:** after login at
+  `http://localhost:8080` the `netscanner_session` cookie is present with
+  `HttpOnly`, `Secure`, `SameSite=Strict` and `Path=/`, and the session is
+  kept after a reload and when opening Devices. Safari is known not to keep
+  the cookie (MDN); other browsers have not been checked.
 - Trusting an outer proxy's `X-Forwarded-For` for rate limiting is deferred
   until such a proxy is actually used.

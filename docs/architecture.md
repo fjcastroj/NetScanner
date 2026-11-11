@@ -188,8 +188,11 @@ From `add-admin-authentication` (RNF-05, RNF-01, RNF-04).
   `Secure` cookie makes plain HTTP across the network fail instead of
   working insecurely.
 - **Whether the browser keeps a `Secure` cookie on `http://localhost`.**
-  Current Chromium and Firefox do and Safari does not; it is checked by hand
-  in the author's browser (task 7.3 of the change).
+  Current Chromium and Firefox do and Safari does not (MDN). Checked by hand
+  (task 7.3 of the change) in Google Chrome 157.0.8103.51 (64-bit) on
+  Windows: at `http://localhost:8080` the `netscanner_session` cookie is kept
+  with `HttpOnly`, `Secure`, `SameSite=Strict` and `Path=/`, and the session
+  survives a reload and opening Devices. Other browsers are not checked.
 - **The bind address check is about configuration.** A hand-edited `ports:`
   in the Compose file is not detected at start; the static deployment test
   and the stack test check the files and the running stack.

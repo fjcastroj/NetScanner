@@ -4,7 +4,6 @@
 
 Defines the HTTP API used by the web interface for configuration, discovery
 runs and the basic inventory.
-
 ## Requirements
 ### Requirement: Configuration endpoints
 The API SHALL provide endpoints to read and save the discovery settings and to read the credential's non-secret description and replace the credential, validating all input and never returning a secret.
@@ -31,14 +30,10 @@ The API SHALL provide a device list with name, management address, vendor, model
 - **WHEN** the detail of `srx-01` is requested
 - **THEN** its model is returned as inferred with its method and its evidence fragments, and its interfaces as observed with their source table and age
 
-### Requirement: Lab mode until authentication
-Until authentication exists, the application SHALL operate only in lab mode: it SHALL accept only lab ranges, as required by the scope's lab-only guard, and its status endpoint SHALL report lab mode without authentication. The recommended deployment binds the web service to the local host; this is a deployment recommendation, not a guarantee of the application.
+### Requirement: Status reports authentication
+The status endpoint SHALL report that authentication is enabled and whether an administrator account exists, and SHALL NOT reveal the user name or any session detail.
 
-#### Scenario: Lab mode reported
-- **WHEN** the status endpoint is read
-- **THEN** it reports that the application is in lab mode without authentication
-
-#### Scenario: Deployment bound to another address
-- **WHEN** the operator binds the web service to an address other than the local host
-- **THEN** the application still accepts only lab ranges
+#### Scenario: Status without session
+- **WHEN** the status endpoint is read without a session
+- **THEN** it answers 200 with `authentication: true` and whether an administrator exists, and nothing else about the account
 

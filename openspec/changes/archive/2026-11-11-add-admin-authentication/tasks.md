@@ -44,6 +44,6 @@ the repository. Write files with LF line endings.
 
 - [x] 7.1 Stack test per the deployment delta: create the administrator with `--password-stdin`, 401 before login through the web port, lab run after login, 401 after logout, cross-site check through the web port
 - [x] 7.2 README: official local address `http://localhost:8080`, create and reset commands, TLS proxy requirement beyond local use with `NETSCANNER_PUBLIC_ORIGIN`, the `Secure` cookie setting and its loopback-only exception, what lab mode was and why it ended; `docs/architecture.md` section on authentication (what is guaranteed, how it is tested, what is not covered)
-- [ ] 7.3 Manual check, documented in the PR: log in from the author's browser at `http://localhost:8080` and confirm the `Secure` cookie is kept (open question of the design)
+- [x] 7.3 Manual check, documented in the PR: log in from the author's browser at `http://localhost:8080` and confirm the `Secure` cookie is kept (open question of the design)
 - [x] 7.4 `CHANGELOG.md` entry
 - [x] 7.5 `scripts/check_confidentiality.py --all`, the full suite on Linux after the last edit, the hooks, the stack test and `openspec validate --all --strict`; all green
