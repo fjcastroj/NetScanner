@@ -8,6 +8,30 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Administrator authentication (`add-admin-authentication`, RNF-05, RNF-01,
+  RNF-04):
+  - one local administrator, created and reset only from the server console
+    (`python -m netscanner.admin create` / `reset-password`, password read
+    twice without echo or once with `--password-stdin`), stored as an
+    Argon2id hash (`argon2-cffi` 25.1.0, RFC 9106 low-memory profile);
+  - server-side sessions in an `HttpOnly`, `SameSite=Strict`, `Secure`
+    cookie, stored by token hash, with idle (8 h) and absolute (24 h) expiry,
+    logout and revocation on password reset; `NETSCANNER_SESSION_*`
+    settings, and the API refuses to start with the cookie not `Secure`
+    unless `NETSCANNER_WEB_BIND` is a loopback address;
+  - every `/api` route requires a session except health, status, login and
+    logout, proved by a test that enumerates every route; protected
+    responses are not cached;
+  - cross-site protection (`X-NetScanner-Request` header and allowed origins
+    from configuration, `NETSCANNER_PUBLIC_ORIGIN` behind a TLS proxy) and a
+    guessing limit per source address (5 failures in 15 minutes);
+  - login screen, return to the open page after the session expires, user
+    name and logout in the header, in Spanish and English;
+  - migration `0005` (`admin_account`, `sessions`, `login_attempts`);
+  - a static test that `web` is the only service publishing a host port in
+    both Compose files; the stack test now covers the authentication
+    sequence through the web port.
+
 - Discovery and basic inventory (`add-discovery-and-basic-inventory`, RF-01
   to RF-05, RF-11, RF-12 collection, RF-29, RNF-01, RNF-03, RNF-06):
   - scope policy (`netscanner.scope`): allowed and excluded ranges, deny by
@@ -129,3 +153,17 @@ project uses [Semantic Versioning](https://semver.org/).
 - Pre-commit hooks, automated stack test (`scripts/stack_test.py`) and a
   GitHub Actions workflow running linting, tests, repository checks, the
   stack test and `openspec validate --all --strict`.
+
+### Changed
+
+- The status endpoint reports `authentication` and whether the
+  administrator exists, instead of lab mode.
+- Planned change sequence: `add-admin-authentication` comes before
+  `add-interface-polling`, because the first real run needs it.
+
+### Removed
+
+- Lab mode: the lab-only scope guard (allowed ranges restricted to
+  10.99.0.0/24 and loopback) and the lab mode notice, now that every
+  administrative route requires a session. Every other scope rule is
+  unchanged.

@@ -26,15 +26,6 @@ Address = ipaddress.IPv4Address | ipaddress.IPv6Address
 Network = ipaddress.IPv4Network | ipaddress.IPv6Network
 RejectionReason = Literal["special_address", "excluded", "out_of_scope"]
 
-# Lab-only guard (design D6): until administrator authentication protects
-# every administrative route, allowed ranges must lie inside these networks.
-# add-admin-authentication may remove it only together with end-to-end tests
-# showing that settings, credential and run routes answer 401 without a session.
-LAB_RANGES: tuple[Network, ...] = (
-    ipaddress.ip_network("10.99.0.0/24"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("::1/128"),
-)
 LIMITED_BROADCAST = ipaddress.IPv4Address("255.255.255.255")
 
 
@@ -44,25 +35,6 @@ class ScopeError(ValueError):
     def __init__(self, category: Literal["empty_scope", "scope_not_allowed"], message: str) -> None:
         super().__init__(message)
         self.category = category
-
-
-def outside_lab(networks: Iterable[Network]) -> list[Network]:
-    """Allowed ranges that the lab-only guard refuses."""
-    return [
-        n
-        for n in networks
-        if not any(n.version == lab.version and n.subnet_of(lab) for lab in LAB_RANGES)
-    ]
-
-
-def check_lab_guard(networks: Iterable[Network]) -> None:
-    refused = outside_lab(networks)
-    if refused:
-        raise ScopeError(
-            "scope_not_allowed",
-            "only the lab range 10.99.0.0/24 and loopback may be allowed: real networks "
-            "require administrator authentication to be in place first",
-        )
 
 
 @dataclass(frozen=True)
@@ -141,12 +113,21 @@ class ScopePolicy:
         excluded: Iterable[str | Network] = (),
         credential_id: int | None = None,
     ) -> ScopePolicy:
-        """A policy for a run; refuses an empty scope and ranges outside the lab."""
-        allowed_nets = tuple(ipaddress.ip_network(n) for n in allowed)
+        """A policy for a run; refuses an empty scope and ranges it cannot build.
+
+        The lab-only guard was removed by add-admin-authentication (design D9):
+        every administrative route now needs a session.
+        """
+        try:
+            allowed_nets = tuple(ipaddress.ip_network(n) for n in allowed)
+            excluded_nets = tuple(ipaddress.ip_network(n) for n in excluded)
+        except (TypeError, ValueError):
+            raise ScopeError(
+                "scope_not_allowed", "an allowed or excluded range is not a valid network"
+            ) from None
         if not allowed_nets:
             raise ScopeError("empty_scope", "no allowed range: nothing may be queried")
-        check_lab_guard(allowed_nets)
-        return cls(allowed_nets, tuple(ipaddress.ip_network(n) for n in excluded), credential_id)
+        return cls(allowed_nets, excluded_nets, credential_id)
 
     @classmethod
     def from_parameters(cls, parameters: RunParameters) -> ScopePolicy:

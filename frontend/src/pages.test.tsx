@@ -23,6 +23,13 @@ import { Provenance } from './Provenance'
 type Reply = { status?: number; body: unknown } | ((init?: RequestInit) => { status?: number; body: unknown })
 type Calls = { url: string; init?: RequestInit }[]
 
+// Logged in: the session check answers, as do health and status.
+const DEFAULTS: Record<string, Reply> = {
+  'GET /api/health': { body: { status: 'ok' } },
+  'GET /api/auth/session': { body: { username: 'lab-admin', expires_at: '2026-11-11T10:00:00+00:00' } },
+  'GET /api/status': { body: { authentication: true, admin_exists: true } },
+}
+
 function stubApi(routes: Record<string, Reply>): Calls {
   const calls: Calls = []
   vi.stubGlobal(
@@ -30,7 +37,7 @@ function stubApi(routes: Record<string, Reply>): Calls {
     vi.fn((url: string, init?: RequestInit) => {
       calls.push({ url, init })
       const key = `${init?.method ?? 'GET'} ${url.split('?')[0]}`
-      const route = routes[key] ?? (url === '/api/health' ? { body: { status: 'ok' } } : undefined)
+      const route = routes[key] ?? DEFAULTS[key]
       if (route === undefined) return Promise.resolve(new Response('{}', { status: 404 }))
       const { status = 200, body } = typeof route === 'function' ? route(init) : route
       return Promise.resolve(new Response(JSON.stringify(body), { status }))
@@ -116,7 +123,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('lab mode banner', () => {
+describe('header with the session', () => {
   const routes = {
     'GET /api/settings/discovery': { body: SETTINGS },
     'GET /api/settings/credential': { body: CREDENTIAL },
@@ -130,11 +137,13 @@ describe('lab mode banner', () => {
     ['en', en],
   ] as const) {
     for (const path of ['/settings', '/discovery', '/devices', '/devices/1']) {
-      it(`is visible on ${path} in ${language}`, async () => {
+      it(`shows the user and logout on ${path} in ${language}, and no lab banner`, async () => {
         stubApi(routes)
         await renderAt(path, language)
-        const banner = screen.getByRole('note', { name: texts.lab.label })
-        expect(banner.textContent).toContain(texts.lab.title)
+        expect(screen.getByLabelText(texts.session.user).textContent).toBe('lab-admin')
+        expect(screen.getByRole('button', { name: texts.session.logout })).toBeTruthy()
+        expect(screen.queryByRole('note')).toBeNull()
+        expect(document.body.textContent).not.toMatch(/laboratorio sin autenticación|lab mode/i)
       })
     }
   }

@@ -65,6 +65,14 @@ services:
 
   api:
     <<: *backend
+    environment:
+      <<: *backend-env
+      # The Secure cookie check and the allowed origins (add-admin-authentication D3, D6).
+      NETSCANNER_WEB_BIND: ${NETSCANNER_WEB_BIND:-127.0.0.1:8080}
+      NETSCANNER_SESSION_IDLE: ${NETSCANNER_SESSION_IDLE:-PT8H}
+      NETSCANNER_SESSION_MAX_AGE: ${NETSCANNER_SESSION_MAX_AGE:-PT24H}
+      NETSCANNER_SESSION_COOKIE_SECURE: ${NETSCANNER_SESSION_COOKIE_SECURE:-true}
+      NETSCANNER_PUBLIC_ORIGIN: ${NETSCANNER_PUBLIC_ORIGIN:-}
     command: ["python", "-m", "netscanner.api"]
     depends_on:
       migrate:

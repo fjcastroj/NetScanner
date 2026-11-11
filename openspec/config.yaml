@@ -86,10 +86,13 @@ context: |
     is used only with lab data and bound to localhost. It MUST be in place
     before the application stores real credentials or real network data.
   - The lab-only scope guard (allowed ranges restricted to 10.99.0.0/24 and
-    loopback, add-discovery-and-basic-inventory design D6) may be removed only
-    by add-admin-authentication, and only together with end-to-end tests
-    showing that the settings, credential and run routes answer 401 without a
-    session.
+    loopback, add-discovery-and-basic-inventory design D6) was removed by
+    add-admin-authentication (design D9), because every administrative route
+    now requires an administrator session: a route enumeration test calls every
+    route outside the public list without a session and expects 401, and the
+    stack test checks the settings, credential, run and inventory routes
+    through the web port. A future change that adds a route without the
+    session dependency fails that test; the guard must not be needed again.
 
   ## Planned change sequence (adjust only with a reason)
   1. setup-project-skeleton
@@ -101,8 +104,10 @@ context: |
      credentials are security preconditions of discovery, so they are part
      of the same change; it also delivers the basic API and the device list
      and detail screens)
-  5. add-interface-polling
-  6. add-admin-authentication
+  5. add-admin-authentication (moved before interface polling: the first
+     run against the real network, needed for the OE6 evaluation, requires a
+     protected application, and polling does not)
+  6. add-interface-polling
   7. add-inventory-ui (the inventory screens beyond the basic list and detail)
   Later iterations follow the report: inventory and location, topology,
   traffic, evaluation.

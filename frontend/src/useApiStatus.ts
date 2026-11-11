@@ -7,6 +7,8 @@
 
 import { useEffect, useState } from 'react'
 
+import { REQUEST_HEADER } from './api'
+
 export type ApiStatus = 'checking' | 'available' | 'unavailable'
 
 export const HEALTH_URL = '/api/health'
@@ -16,7 +18,7 @@ const POLL_INTERVAL_MS = 30_000
 // "unavailable"; no technical detail reaches the interface.
 export async function fetchApiStatus(): Promise<ApiStatus> {
   try {
-    const response = await fetch(HEALTH_URL, { headers: { Accept: 'application/json' } })
+    const response = await fetch(HEALTH_URL, { headers: { Accept: 'application/json', ...REQUEST_HEADER } })
     return response.ok ? 'available' : 'unavailable'
   } catch {
     return 'unavailable'

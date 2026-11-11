@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, IPvAnyNetwork, ValidationError
 
 from netscanner.core.config import Settings
-from netscanner.scope.policy import ScopeError, ScopePolicy, outside_lab
+from netscanner.scope.policy import ScopeError, ScopePolicy
 from netscanner.store.runs import RunLimits, RunParameters
 
 
@@ -80,15 +80,6 @@ def validate_settings(data: dict, ceilings: DiscoveryCeilings) -> DiscoverySetti
         ceiling = getattr(ceilings, field)
         if getattr(settings, field) > ceiling:
             problems.append((field, f"above the server's ceiling of {ceiling}"))
-    for i, network in enumerate(settings.allowed_ranges):
-        if outside_lab([network]):
-            problems.append(
-                (
-                    f"allowed_ranges.{i}",
-                    "only the lab range 10.99.0.0/24 and loopback may be allowed: real networks "
-                    "require administrator authentication to be in place first",
-                )
-            )
     if not problems and settings.allowed_ranges:
         policy = ScopePolicy.build(settings.allowed_ranges, settings.exclusions)
         for i, seed in enumerate(settings.seeds):

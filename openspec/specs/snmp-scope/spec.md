@@ -4,7 +4,6 @@
 
 Defines which addresses NetScanner may query, how that is enforced below
 every SNMP use, and the operational limits of a run.
-
 ## Requirements
 ### Requirement: RNF-03 Authorised scope
 The system SHALL query only IP addresses that are inside an allowed range and outside every excluded range, with exclusion taking precedence, and SHALL query nothing when no allowed range is configured.
@@ -103,15 +102,4 @@ Each run SHALL be bounded by a maximum number of candidates recorded, of devices
 #### Scenario: Datagram budget exhausted before a candidate
 - **WHEN** the datagram budget is already exhausted when a recorded candidate's turn comes
 - **THEN** no request is sent and no query is recorded for it, and the candidate gets reason `limit_reached`, not `no_response`
-
-### Requirement: Lab-only guard until authentication
-Until administrator authentication protects every administrative route, the allowed ranges SHALL be restricted to the lab range 10.99.0.0/24 and loopback, checked when settings are saved and again when a run starts, and any other range SHALL be rejected with a message explaining why.
-
-#### Scenario: Real network range before authentication
-- **WHEN** an allowed range outside the lab range is saved
-- **THEN** it is rejected with a message saying that real networks require authentication to be in place first
-
-#### Scenario: Guard bypassed in the database
-- **WHEN** a range outside the lab range is written directly into the stored settings and a run is started
-- **THEN** the run fails with reason `scope_not_allowed` before any datagram is sent
 

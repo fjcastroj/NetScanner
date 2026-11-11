@@ -14,15 +14,15 @@ from __future__ import annotations
 
 import json
 import secrets
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from netscanner.api.app import create_app
 from netscanner.core.config import Settings
 
+from .auth_helpers import api_client, create_admin, login
 from .conftest import Canaries, DiscoveryLab, all_rows_text
 from .discovery_run import Network, claim_and_run
 from .snmp_agent import Behaviour, ScriptedAgent
@@ -41,9 +41,12 @@ LAB_SETTINGS = {
 
 
 @pytest.fixture
-def client(engine: AsyncEngine, store_settings: Settings) -> Iterator[TestClient]:
-    # ``engine`` truncates the tables after the test.
-    with TestClient(create_app(store_settings), raise_server_exceptions=False) as test_client:
+async def client(engine: AsyncEngine, store_settings: Settings) -> AsyncIterator[TestClient]:
+    # ``engine`` truncates the tables after the test. Logged in as the administrator
+    # (add-admin-authentication); the routes without a session are tested in test_auth.py.
+    await create_admin(engine)
+    with api_client(store_settings) as test_client:
+        login(test_client)
         yield test_client
 
 
@@ -60,10 +63,9 @@ def fields(response) -> dict[str, str]:
 # --- Status ----------------------------------------------------------------------
 
 
-def test_status_reports_lab_mode_without_authentication(client: TestClient) -> None:
-    body = client.get("/api/status").json()
-    assert body["lab_mode"] is True and body["authentication"] is False
-    assert LAB in body["lab_ranges"]
+def test_status_reports_authentication(client: TestClient) -> None:
+    # Lab mode ended with add-admin-authentication (D9); the account is not described.
+    assert client.get("/api/status").json() == {"authentication": True, "admin_exists": True}
 
 
 # --- Discovery settings ----------------------------------------------------------
@@ -87,7 +89,7 @@ def test_settings_saved_and_read_back(client: TestClient) -> None:
         ({"seeds": ["198.51.100.77"]}, "seeds.0"),
         ({"max_depth": 6}, "max_depth"),
         ({"max_datagrams": 50001}, "max_datagrams"),
-        ({"allowed_ranges": ["198.51.100.0/24"], "seeds": []}, "allowed_ranges.0"),
+        ({"allowed_ranges": ["198.51.100.0/24"], "exclusions": ["10.99.0/24"]}, "exclusions.0"),
         ({"unexpected": "198.51.100.88"}, "unexpected"),
     ],
 )

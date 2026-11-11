@@ -6,19 +6,38 @@
  */
 
 // Calls to the API of design D10. Errors keep only what the interface may
-// show: the status and, for 422, the field and reason of each problem. No
-// response body or exception text reaches the screen.
+// show: the status, for 422 the field and reason of each problem, and for 429
+// the retry time. No response body or exception text reaches the screen.
+//
+// add-admin-authentication D8: every request carries X-NetScanner-Request: 1
+// (the cross-site check of D6), and a 401 notifies the application, which
+// discards the data shown and returns to the login screen. A failed login
+// answers 401 too; the login form handles that one itself.
+
+export const REQUEST_HEADER = { 'X-NetScanner-Request': '1' }
+export const LOGIN_URL = '/api/auth/login'
+
+type Listener = () => void
+const unauthorizedListeners = new Set<Listener>()
+
+// Returns the function that removes the listener.
+export function onUnauthorized(listener: Listener): () => void {
+  unauthorizedListeners.add(listener)
+  return () => unauthorizedListeners.delete(listener)
+}
 
 export type Problem = { field: string; reason: string }
 
 export class ApiError extends Error {
   readonly status: number
   readonly problems: Problem[]
+  readonly retryAfter: number | null
 
-  constructor(status: number, problems: Problem[] = []) {
+  constructor(status: number, problems: Problem[] = [], retryAfter: number | null = null) {
     super(`API error ${status}`)
     this.status = status
     this.problems = problems
+    this.retryAfter = retryAfter
   }
 }
 
@@ -27,7 +46,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     response = await fetch(path, {
       method,
-      headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      headers: {
+        Accept: 'application/json',
+        ...REQUEST_HEADER,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
@@ -47,7 +70,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
         // an unreadable body is reported by status only
       }
     }
-    throw new ApiError(response.status, problems)
+    if (response.status === 401 && path !== LOGIN_URL) {
+      unauthorizedListeners.forEach((listener) => listener())
+    }
+    const retry = Number(response.headers.get('Retry-After'))
+    throw new ApiError(response.status, problems, response.status === 429 && retry > 0 ? retry : null)
   }
   return (await response.json()) as T
 }
@@ -73,7 +100,6 @@ export type DiscoverySettings = {
   max_datagrams: number
   updated_at?: string
   ceilings?: Ceilings
-  lab_ranges?: string[]
 }
 
 export type CredentialDescription = {
@@ -159,5 +185,8 @@ export type DeviceDetail = {
   addresses: RecordItem[]
   interfaces: RecordItem[]
 }
+
+export type Status = { authentication: boolean; admin_exists: boolean }
+export type SessionInfo = { username: string; expires_at: string }
 
 export const ACTIVE_STATUSES: RunStatus[] = ['pending', 'running']

@@ -394,6 +394,48 @@ discovery_settings = Table(
     ),
 )
 
+# --- Administrator authentication (add-admin-authentication) ----------------
+
+USERNAME_PATTERN = "^[A-Za-z0-9._-]{1,64}$"
+
+# At most one administrator: a CHECK on a constant key (design D2).
+admin_account = Table(
+    "admin_account",
+    metadata,
+    Column("id", SmallInteger, primary_key=True),
+    Column("username", String(64), nullable=False),
+    Column("password_hash", String(255), nullable=False),
+    _ts("created_at", nullable=False),
+    _ts("password_changed_at", nullable=False),
+    CheckConstraint("id = 1", name="single_row"),
+    CheckConstraint(f"username ~ '{USERNAME_PATTERN}'", name="username"),
+)
+
+# Server-side sessions, stored by the SHA-256 of the token (design D3).
+sessions = Table(
+    "sessions",
+    metadata,
+    _id(),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    _ts("created_at", nullable=False),
+    _ts("last_used_at", nullable=False),
+    _ts("expires_at", nullable=False),
+    Column("source_address", INET),
+    CheckConstraint("token_hash ~ '^[0-9a-f]{64}$'", name="token_hash"),
+    CheckConstraint("last_used_at >= created_at AND expires_at > created_at", name="times"),
+)
+
+# Login attempts per source address, for the guessing limit (design D7).
+login_attempts = Table(
+    "login_attempts",
+    metadata,
+    _id(),
+    _ts("at", nullable=False),
+    Column("source_address", INET, nullable=False),
+    Column("succeeded", Boolean, nullable=False),
+)
+Index("ix_login_attempts_source_at", login_attempts.c.source_address, login_attempts.c.at)
+
 # --- Observations -----------------------------------------------------------
 
 interfaces = Table(
@@ -555,3 +597,15 @@ class SnmpCredentialRow(Base):
 
 class DiscoverySettingsRow(Base):
     __table__ = discovery_settings
+
+
+class AdminAccountRow(Base):
+    __table__ = admin_account
+
+
+class SessionRow(Base):
+    __table__ = sessions
+
+
+class LoginAttemptRow(Base):
+    __table__ = login_attempts

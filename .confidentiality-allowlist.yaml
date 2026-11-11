@@ -26,9 +26,6 @@ entries:
   - value: "fe80::/10"
     paths: *range-docs
     reason: Names the forbidden IPv6 link-local block; not a host.
-  - value: "10.0.0.0/8"
-    paths: ["backend/tests/test_scope.py"]
-    reason: A private block named as a range the lab-only guard must refuse; not a host.
   - value: "224.0.0.1"
     paths: ["backend/tests/test_scope.py"]
     reason: Synthetic IPv4 multicast address in a test that special addresses are never queried.

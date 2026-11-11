@@ -20,11 +20,6 @@
     "available": "Servicio disponible",
     "unavailable": "Servicio no disponible"
   },
-  "lab": {
-    "label": "Aviso de modo laboratorio",
-    "title": "Modo laboratorio sin autenticación.",
-    "text": "Solo se pueden consultar los rangos del laboratorio hasta que exista la autenticación del administrador. No expongas esta aplicación fuera del equipo local."
-  },
   "common": {
     "loading": "Cargando…"
   },
@@ -97,7 +92,7 @@
   },
   "run_errors": {
     "empty_scope": "sin rangos permitidos",
-    "scope_not_allowed": "rango fuera del laboratorio",
+    "scope_not_allowed": "ámbito no utilizable",
     "limits_not_allowed": "límites no permitidos",
     "credential_unreadable": "credencial ilegible",
     "database_error": "error de base de datos",
@@ -190,5 +185,19 @@
     "known": "en el registro de fabricantes",
     "generic_agent": "agente SNMP genérico (no se conoce el fabricante del equipo)",
     "not_in_registry": "número de empresa no registrado"
+  },
+  "login": {
+    "title": "Iniciar sesión",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "submit": "Entrar",
+    "failed": "El usuario o la contraseña no son correctos.",
+    "limited": "Demasiados intentos fallidos. Vuelve a intentarlo después de las {{time}}.",
+    "error": "No se ha podido contactar con el servicio. Inténtalo más tarde.",
+    "no_account": "Todavía no existe la cuenta de administrador. Créala en el servidor, desde la consola:"
+  },
+  "session": {
+    "user": "Sesión de",
+    "logout": "Cerrar sesión"
   }
 }

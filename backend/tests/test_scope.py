@@ -2,7 +2,11 @@
 # Copyright 2026 Francisco Javier Castro Jiménez
 # Developed as part of the Final Degree Project (TFE), Bachelor's Degree in
 # Computer Engineering, Universidad Internacional de La Rioja (UNIR).
-"""Scope policy, lab-only guard and settings limits (snmp-scope spec, design D2, D6).
+"""Scope policy and settings limits (snmp-scope spec, design D2, D6).
+
+The lab-only guard was removed by add-admin-authentication (design D9); its
+tests are replaced by the route enumeration test of that change, and every
+other scope rule keeps its tests here.
 
 Property-style: each rule is checked over every address of small ranges and
 over sampled addresses of larger ones, in IPv4 and IPv6, instead of a few
@@ -92,8 +96,8 @@ def test_ipv6_scope() -> None:
     ],
 )
 def test_special_addresses_refused_even_when_allowed(address: str) -> None:
-    # Allowed ranges never contain them under the lab guard; build the policy
-    # directly to show the rule does not depend on the guard.
+    # Allowed ranges that contain them are unusual; build the policy directly to
+    # show the rule holds whatever range is allowed.
     network = ipaddress.ip_network(address).supernet(new_prefix=0)
     policy = ScopePolicy((network,), ())
     assert reason(policy, address) == "special_address"
@@ -165,22 +169,32 @@ def test_policy_is_frozen_per_run() -> None:
     assert not policy.contains("10.99.0.3") and policy.contains("10.99.0.200")
 
 
-# --- Lab-only guard (D6) ----------------------------------------------------
+# --- Without the lab-only guard (add-admin-authentication D9) ---------------
+
+
+@pytest.mark.parametrize("network", ["198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32"])
+def test_real_looking_range_builds_a_policy_with_every_other_rule(network: str) -> None:
+    net = ipaddress.ip_network(network)
+    inside, other = next(net.hosts()), net.network_address + 2
+    policy = ScopePolicy.build([network], [f"{other}/{other.max_prefixlen}"])
+    assert reason(policy, inside) is None
+    assert reason(policy, other) == "excluded"  # exclusion wins
+    assert reason(policy, "10.99.0.2") == "out_of_scope"  # deny by default
+    if net.version == 4:
+        assert reason(policy, net.broadcast_address) == "special_address"
+    stored = RunParameters(allowed_ranges=[network], seeds=[str(inside)])
+    assert ScopePolicy.from_parameters(stored).contains(inside)
 
 
 @pytest.mark.parametrize(
-    "network", ["198.51.100.0/24", "10.0.0.0/8", "10.99.0.0/23", "203.0.113.0/24", "2001:db8::/32"]
+    ("allowed", "excluded"),
+    [(["not-a-network"], []), (["10.99.0.1/24"], []), ([LAB], ["10.99.0.0/33"])],
 )
-def test_non_lab_range_refused_by_the_policy(network: str) -> None:
+def test_scope_the_policy_cannot_build_gives_scope_not_allowed(
+    allowed: list[str], excluded: list[str]
+) -> None:
     with pytest.raises(ScopeError) as info:
-        ScopePolicy.build([network])
-    assert info.value.category == "scope_not_allowed"
-
-
-def test_guard_bypassed_in_the_database_still_refused_at_run_start() -> None:
-    stored = RunParameters(allowed_ranges=["198.51.100.0/24"], seeds=["198.51.100.1"])
-    with pytest.raises(ScopeError) as info:
-        ScopePolicy.from_parameters(stored)
+        ScopePolicy.build(allowed, excluded)
     assert info.value.category == "scope_not_allowed"
 
 
@@ -208,9 +222,11 @@ def test_valid_settings() -> None:
     assert [str(s) for s in settings.seeds] == ["10.99.0.13", "10.99.0.2"]
 
 
-def test_real_network_range_refused_when_saved() -> None:
-    found = problems({"allowed_ranges": [LAB, "198.51.100.0/24"]})
-    assert "real networks require administrator authentication" in found["allowed_ranges.1"]
+def test_real_looking_range_accepted_when_saved() -> None:
+    settings = validate_settings(
+        {"allowed_ranges": [LAB, "198.51.100.0/24"], "seeds": ["198.51.100.10"]}, CEILINGS
+    )
+    assert [str(n) for n in settings.allowed_ranges] == [LAB, "198.51.100.0/24"]
 
 
 @pytest.mark.parametrize(

@@ -289,18 +289,22 @@ async def test_empty_scope_fails_before_any_datagram(
     assert await run.devices() == [] and await run.queries() == []
 
 
-async def test_scope_outside_lab_fails_before_any_datagram(
+async def test_real_looking_range_runs_without_the_lab_guard(
     engine: AsyncEngine, secret_key: str, silent: ScriptedAgent
 ) -> None:
-    async with agent(device("sw-a")) as a:
-        network = Network({A: a.port, "192.0.2.10": a.port}, default=silent.port)
+    # add-admin-authentication D9: the lab-only guard is gone; every other rule stays.
+    advertising = device("sw-a") | cdp_neighbour(1, 7, "192.0.2.20", "sw-x")
+    async with agent(advertising) as a, agent(device("sw-x")) as outside:
+        network = Network({"192.0.2.10": a.port, "192.0.2.20": outside.port}, default=silent.port)
         run = await discover(
             engine, secret_key, network, credential=credential(), seeds=["192.0.2.10"],
-            allowed=["192.0.2.0/24"],
+            allowed=["192.0.2.0/24"], exclusions=["192.0.2.20/32"], snmp_limits=FAST,
         )  # fmt: skip
-        assert a.requests == 0
-    record = await run.run()
-    assert (record["status"], record["error_category"]) == ("failed", "scope_not_allowed")
+        assert a.requests > 0 and outside.requests == 0
+    assert run.status == "completed"
+    found = await run.by_address()
+    assert found["192.0.2.10"]["device_id"]
+    assert found["192.0.2.20"]["skip_reason"] == "excluded"
 
 
 async def test_limits_above_ceiling_at_run_start_fail_before_any_datagram(
